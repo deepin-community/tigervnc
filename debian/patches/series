@@ -1,0 +1,38 @@
+0000-find-fltk-libs.patch
+0001-x0vncserver-build-make-missing-libraries-fatal-errors.patch
+0002-fix-linking.patch
+0010-fix-xtigervnc-build.patch
+0020-buildtime-from-debian-changelog.patch
+0102-fix-spelling-error-in-manpages-to-shutup-lintian.patch
+0151-make-cmake-enable-options-mandatory-if-turned-on.patch
+0175-xtigervncviewer-WM_CLASS.patch
+# rework/0200-add-tcpwrappers-support.patch # This patch is still not ported
+0205-defined-CMAKE_INSTALL_FULL_BINDIR.patch
+0210-use-tigervncsession-name.patch
+0220-remove-systemd-service-obsolete-syslog-target.patch
+0300-xorg-0121.patch
+
+# Backported fixes from upstream
+backport/0001-Fix-formatting-of-rfbport-in-man-pages.patch
+backport/0002-Fix-typo-in-mirror-monitor-detection.patch
+backport/0003-Fix-handling-of-VMware-cursors.patch
+backport/0004-Fix-session-resize-after-mirroring-on-Linux-vncviewe.patch
+
+# Debian changes forwarded and applied by upstream
+backport/0005-Added-AppStream-meta-info-file-for-the-vncviewer.patch
+
+# These patches are lifted from RedHat
+rh/0904-Added-RH-patch-tigervnc11-rh588342.patch-which-fixes.patch
+# These patches are lifted from RHEL 7.4 (tigervnc-1.8.0-2.el7_4.src.rpm)
+#rh/dustbin/tigervnc-shebang.patch # not required as we have our own tigervncserver wrapper script
+rh/tigervnc-manpages.patch
+rh/tigervnc-cursor.patch
+#rh/dustbin/tigervnc-xstartup.patch # not required as we have our own tigervncserver wrapper script
+#rh/dustbin/tigervnc-1.3.1-CVE-2014-8240.patch # duplicate of CVE-2014-8240-849479.patch
+#rh/dustbin/tigervnc-1.3.1-do-not-die-when-port-is-already-taken.patch # not required as we have our own tigervncserver wrapper script
+#rh/dustbin/tigervnc-working-tls-on-fips-systems.patch # not required as DH auth is no longer enabled.
+#rh/dustbin/0001-rpath-hack.patch # Hopefully Vendor neutral GL dispatch makes this hack obsolete
+#rh/dustbin/tigervnc-xserver119.patch # buster has xserver120 and TigerVNC 1.9 comes with official support for it
+
+# The following patches are security fixes
+CVE-2014-8240-849479.patch
