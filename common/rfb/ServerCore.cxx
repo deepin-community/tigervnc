@@ -21,8 +21,11 @@
 // This header will define the Server interface, from which ServerMT and
 // ServerST will be derived.
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <string.h>
-#include <rfb/util.h>
 #include <rfb/ServerCore.h>
 
 rfb::IntParameter rfb::Server::idleTimeout
@@ -78,7 +81,7 @@ rfb::BoolParameter rfb::Server::acceptKeyEvents
  true);
 rfb::BoolParameter rfb::Server::acceptPointerEvents
 ("AcceptPointerEvents",
- "Accept pointer press and release events from clients.",
+ "Accept pointer movement and button events from clients.",
  true);
 rfb::BoolParameter rfb::Server::acceptCutText
 ("AcceptCutText",

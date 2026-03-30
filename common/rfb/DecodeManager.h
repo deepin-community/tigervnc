@@ -32,7 +32,6 @@ namespace os {
 }
 
 namespace rdr {
-  struct Exception;
   class MemOutStream;
 }
 
@@ -53,12 +52,23 @@ namespace rfb {
     void flush();
 
   private:
-    void setThreadException(const rdr::Exception& e);
+    void logStats();
+
+    void setThreadException(const std::exception& e);
     void throwThreadException();
 
   private:
     CConnection *conn;
     Decoder *decoders[encodingMax+1];
+
+    struct DecoderStats {
+      unsigned rects;
+      unsigned long long bytes;
+      unsigned long long pixels;
+      unsigned long long equivalent;
+    };
+
+    DecoderStats stats[encodingMax+1];
 
     struct QueueEntry {
       bool active;
@@ -87,7 +97,7 @@ namespace rfb {
       void stop();
 
     protected:
-      void worker();
+      void worker() override;
       DecodeManager::QueueEntry* findEntry();
 
     private:
@@ -97,7 +107,7 @@ namespace rfb {
     };
 
     std::list<DecodeThread*> threads;
-    rdr::Exception *threadException;
+    std::exception *threadException;
   };
 }
 

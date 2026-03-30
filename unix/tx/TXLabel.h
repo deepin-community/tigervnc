@@ -35,7 +35,7 @@ public:
   enum HAlign { left, centre, right };
   enum VAlign { top, middle, bottom };
 
-  TXLabel(Display* dpy_, const char* text_, TXWindow* parent_=0,
+  TXLabel(Display* dpy_, const char* text_, TXWindow* parent_=nullptr,
           int w=1, int h=1, HAlign ha=centre, VAlign va=middle)
     : TXWindow(dpy_, w, h, parent_), lineSpacing(2), lines(0),
       halign(ha), valign(va)
@@ -47,20 +47,20 @@ public:
 
   // setText() changes the text in the label.
   void setText(const char* text_) {
-    text.buf = rfb::strDup(text_);
+    text = text_;
     lines = 0;
-    int lineStart = 0;
+    size_t lineStart = 0;
     int textWidth = 0;
-    int i = -1;
+    size_t i = -1;
     do {
       i++;
-      if (text.buf[i] == '\n' || text.buf[i] == 0) {
-        int tw = XTextWidth(defaultFS, &text.buf[lineStart], i-lineStart);
+      if (i >= text.size() || text[i] == '\n') {
+        int tw = XTextWidth(defaultFS, &text[lineStart], i-lineStart);
         if (tw > textWidth) textWidth = tw;
         lineStart = i+1;
         lines++;
       }
-    } while (text.buf[i] != 0);
+    } while (i < text.size());
     int textHeight = ((defaultFS->ascent + defaultFS->descent + lineSpacing)
                       * lines);
     int newWidth = __rfbmax(width(), textWidth + xPad*2);
@@ -93,22 +93,22 @@ private:
   }
 
   void paint() {
-    int lineNum = 0;
-    int lineStart = 0;
-    int i = -1;
+    size_t lineNum = 0;
+    size_t lineStart = 0;
+    size_t i = -1;
     do {
       i++;
-      if (text.buf[i] == '\n' || text.buf[i] == 0) {
-        int tw = XTextWidth(defaultFS, &text.buf[lineStart], i-lineStart);
+      if (i >= text.size() || text[i] == '\n') {
+        int tw = XTextWidth(defaultFS, &text[lineStart], i-lineStart);
         XDrawString(dpy, win(), defaultGC, xOffset(tw), yOffset(lineNum),
-                    &text.buf[lineStart], i-lineStart);
+                    &text[lineStart], i-lineStart);
         lineStart = i+1;
         lineNum++;
       }
-    } while (text.buf[i] != 0);
+    } while (i < text.size());
   }
 
-  virtual void handleEvent(TXWindow* w, XEvent* ev) {
+  void handleEvent(TXWindow* /*w*/, XEvent* ev) override {
     switch (ev->type) {
     case Expose:
       paint();
@@ -117,7 +117,7 @@ private:
   }
 
   int lineSpacing;
-  rfb::CharArray text;
+  std::string text;
   int lines;
   HAlign halign;
   VAlign valign;

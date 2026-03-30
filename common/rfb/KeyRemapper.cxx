@@ -16,7 +16,12 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <stdio.h>
+#include <string.h>
 
 #include <os/Mutex.h>
 
@@ -55,12 +60,12 @@ void KeyRemapper::setMapping(const char* m) {
     if (sscanf(m, "0x%x%c>0x%x", &from,
                &bidi, &to) == 3) {
       if (bidi != '-' && bidi != '<')
-        vlog.error("warning: unknown operation %c>, assuming ->", bidi);
+        vlog.error("Warning: Unknown operation %c>, assuming ->", bidi);
       mapping[from] = to;
       if (bidi == '<')
         mapping[to] = from;
     } else {
-      vlog.error("warning: bad mapping %.*s", (int)(nextComma-m), m);
+      vlog.error("Warning: Bad mapping %.*s", (int)(nextComma-m), m);
     }
     m = nextComma;
     if (nextComma[0])
@@ -68,10 +73,10 @@ void KeyRemapper::setMapping(const char* m) {
   }
 }
 
-rdr::U32 KeyRemapper::remapKey(rdr::U32 key) const {
+uint32_t KeyRemapper::remapKey(uint32_t key) const {
   os::AutoMutex a(mutex);
 
-  std::map<rdr::U32,rdr::U32>::const_iterator i = mapping.find(key);
+  std::map<uint32_t,uint32_t>::const_iterator i = mapping.find(key);
   if (i != mapping.end())
     return i->second;
   return key;
@@ -82,9 +87,9 @@ class KeyMapParameter : public StringParameter {
 public:
   KeyMapParameter()
     : StringParameter("RemapKeys", "Comma-separated list of incoming keysyms to remap.  Mappings are expressed as two hex values, prefixed by 0x, and separated by ->", "") {
-    setParam(value);
+    KeyRemapper::defInstance.setMapping("");
   }
-  bool setParam(const char* v) {
+  bool setParam(const char* v) override {
     KeyRemapper::defInstance.setMapping(v);
     return StringParameter::setParam(v);
   }

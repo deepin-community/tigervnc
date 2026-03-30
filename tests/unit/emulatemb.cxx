@@ -16,6 +16,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <stdio.h>
 #include <vector>
 #include <unistd.h>
@@ -38,14 +42,14 @@ rfb::BoolParameter emulateMiddleButton("dummy_name", "dummy_desc", true);
 class TestClass : public EmulateMB
 {
 public:
-  virtual void sendPointerEvent(const rfb::Point& pos, int buttonMask);
+  void sendPointerEvent(const rfb::Point& pos, uint16_t buttonMask) override;
 
-  struct PointerEventParams {rfb::Point pos; int mask; };
+  struct PointerEventParams {rfb::Point pos; uint16_t mask; };
 
   std::vector<PointerEventParams> results;
 };
 
-void TestClass::sendPointerEvent(const rfb::Point& pos, int buttonMask)
+void TestClass::sendPointerEvent(const rfb::Point& pos, uint16_t buttonMask)
 {
   PointerEventParams params;
   params.pos = pos;
@@ -457,7 +461,7 @@ void testDragAndRelease()
   printf("OK\n");
 }
 
-int main(int argc, char** argv)
+int main(int /*argc*/, char** /*argv*/)
 {
   testDisabledOption();
 

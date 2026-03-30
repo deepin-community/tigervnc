@@ -33,15 +33,14 @@
 #include <rdr/OutStream.h>
 
 using namespace rfb;
-using namespace rdr;
-using namespace std;
 
 static LogWriter vlog("SVeNCrypt");
 
-SSecurityVeNCrypt::SSecurityVeNCrypt(SConnection* sc, SecurityServer *sec)
-  : SSecurity(sc), security(sec)
+SSecurityVeNCrypt::SSecurityVeNCrypt(SConnection* sc_,
+                                     SecurityServer *sec)
+  : SSecurity(sc_), security(sec)
 {
-  ssecurity = NULL;
+  ssecurity = nullptr;
   haveSentVersion = false;
   haveRecvdMajorVersion = false;
   haveRecvdMinorVersion = false;
@@ -51,7 +50,7 @@ SSecurityVeNCrypt::SSecurityVeNCrypt(SConnection* sc, SecurityServer *sec)
   haveChosenType = false;
   chosenType = secTypeVeNCrypt;
   numTypes = 0;
-  subTypes = NULL;
+  subTypes = nullptr;
 }
 
 SSecurityVeNCrypt::~SSecurityVeNCrypt()
@@ -64,7 +63,7 @@ bool SSecurityVeNCrypt::processMsg()
 {
   rdr::InStream* is = sc->getInStream();
   rdr::OutStream* os = sc->getOutStream();
-  rdr::U8 i;
+  uint8_t i;
 
   /* VeNCrypt initialization */
 
@@ -93,15 +92,15 @@ bool SSecurityVeNCrypt::processMsg()
     haveRecvdMinorVersion = true;
 
     /* WORD value with major version in upper 8 bits and minor version in lower 8 bits */
-    U16 Version = (((U16)majorVersion) << 8) | ((U16)minorVersion);
+    uint16_t Version = (((uint16_t)majorVersion) << 8) | ((uint16_t)minorVersion);
 
     switch (Version) {
     case 0x0000: /* 0.0 - The client cannot support us! */
     case 0x0001: /* 0.1 Legacy VeNCrypt, not supported */
       os->writeU8(0xFF); /* This is not OK */
       os->flush();
-      throw AuthFailureException("The client cannot support the server's "
-				 "VeNCrypt version");
+      throw protocol_error("The client cannot support the server's "
+                              "VeNCrypt version");
 
     case 0x0002: /* 0.2 */
       os->writeU8(0); /* OK */
@@ -110,21 +109,21 @@ bool SSecurityVeNCrypt::processMsg()
     default:
       os->writeU8(0xFF); /* Not OK */
       os->flush();
-      throw AuthFailureException("The client returned an unsupported VeNCrypt version");
+      throw protocol_error("The client returned an unsupported VeNCrypt version");
     }
   }
 
   /*
-   * send number of supported VeNCrypt authentication types (U8) followed
-   * by authentication types (U32s)
+   * send number of supported VeNCrypt authentication types (uint8_t)
+   * followed by authentication types (uint32_t:s)
    */
   if (!haveSentTypes) {
-    list<U32> listSubTypes;
+    std::list<uint32_t> listSubTypes;
 
     listSubTypes = security->GetEnabledExtSecTypes();
 
     numTypes = listSubTypes.size();
-    subTypes = new U32[numTypes];
+    subTypes = new uint32_t[numTypes];
 
     for (i = 0; i < numTypes; i++) {
       subTypes[i] = listSubTypes.front();
@@ -139,7 +138,7 @@ bool SSecurityVeNCrypt::processMsg()
       os->flush(); 
       haveSentTypes = true;
     } else
-      throw AuthFailureException("There are no VeNCrypt sub-types to send to the client");
+      throw protocol_error("There are no VeNCrypt sub-types to send to the client");
   }
 
   /* get type back from client (must be one of the ones we sent) */
@@ -164,7 +163,7 @@ bool SSecurityVeNCrypt::processMsg()
 
     /* Set up the stack according to the chosen type */
     if (chosenType == secTypeInvalid || chosenType == secTypeVeNCrypt)
-      throw AuthFailureException("No valid VeNCrypt sub-type");
+      throw protocol_error("No valid VeNCrypt sub-type");
 
     ssecurity = security->GetSSecurity(sc, chosenType);
   }
@@ -175,14 +174,14 @@ bool SSecurityVeNCrypt::processMsg()
 
 const char* SSecurityVeNCrypt::getUserName() const
 {
-  if (ssecurity == NULL)
-    return NULL;
+  if (ssecurity == nullptr)
+    return nullptr;
   return ssecurity->getUserName();
 }
 
-SConnection::AccessRights SSecurityVeNCrypt::getAccessRights() const
+AccessRights SSecurityVeNCrypt::getAccessRights() const
 {
-  if (ssecurity == NULL)
+  if (ssecurity == nullptr)
     return SSecurity::getAccessRights();
   return ssecurity->getAccessRights();
 }

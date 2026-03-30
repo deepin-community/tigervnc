@@ -23,11 +23,19 @@
 # This file has Perl syntax and is source from the tigervncserver script.
 # Several common settings are shown below. Uncomment and modify to your liking.
 
-# $SecurityTypes a comma separated list of security types the TigerVNC
-#                server will offer. Available are None, VncAuth, Plain,
-#                TLSNone, TLSVnc, TLSPlain, X509None, X509Vnc, and X509Plain.
+# $SecurityTypes is a comma-separated list of security types the TigerVNC server
+#                will offer. Available are None, VncAuth, Plain, TLSNone, TLSVnc,
+#                TLSPlain, X509None, X509Vnc, X509Plain, RA2, RA2ne, RA2_256, and
+#                RA2ne_256.
 #
 # Example: $SecurityTypes = "X509Vnc,X509Plain,TLSVnc,TLSPlain,VncAuth";
+
+# $RequireUsername specifies if authentication should be performed via Unix
+#                  username and password (yes) or the VNC password file (no)
+#                  when utilizing one of the RSA-AES security types (i.e., RA2,
+#                  RA2ne, RA2_256, or RA2ne_256).
+#
+# Example: $RequireUsername = "yes";
 
 # $desktopName specifies the name of the desktop.
 #
@@ -44,13 +52,13 @@
 # Example: $localhost = "no";
 
 # $AlwaysShared specifies if incoming connections are always treated as shared,
-# regardless of the client-specified setting.
+#               regardless of the client-specified setting.
 #
 # Default: $AlwaysShared = "no";
 # Example: $AlwaysShared = "yes";
 
 # $NeverShared specifies if incoming connections are never treated as shared,
-# regardless of the client-specified setting.
+#              regardless of the client-specified setting.
 #
 # Default: $NeverShared  = "no";
 # Example: $NeverShared  = "yes";

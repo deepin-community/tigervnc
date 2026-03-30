@@ -16,12 +16,18 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
  * USA.
  */
+
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <rfb/Exception.h>
 #include <rfb/LogWriter.h>
 #include <rfb/SMsgHandler.h>
 #include <rfb/ScreenSet.h>
 #include <rfb/clipboardTypes.h>
 #include <rfb/encodings.h>
+#include <rfb/util.h>
 
 using namespace rfb;
 
@@ -35,7 +41,7 @@ SMsgHandler::~SMsgHandler()
 {
 }
 
-void SMsgHandler::clientInit(bool shared)
+void SMsgHandler::clientInit(bool /*shared*/)
 {
 }
 
@@ -44,15 +50,16 @@ void SMsgHandler::setPixelFormat(const PixelFormat& pf)
   client.setPF(pf);
 }
 
-void SMsgHandler::setEncodings(int nEncodings, const rdr::S32* encodings)
+void SMsgHandler::setEncodings(int nEncodings, const int32_t* encodings)
 {
   bool firstFence, firstContinuousUpdates, firstLEDState,
-       firstQEMUKeyEvent;
+       firstQEMUKeyEvent, firstExtMouseButtonsEvent;
 
   firstFence = !client.supportsFence();
   firstContinuousUpdates = !client.supportsContinuousUpdates();
   firstLEDState = !client.supportsLEDState();
   firstQEMUKeyEvent = !client.supportsEncoding(pseudoEncodingQEMUKeyEvent);
+  firstExtMouseButtonsEvent = !client.supportsEncoding(pseudoEncodingExtendedMouseButtons);
 
   client.setEncodings(nEncodings, encodings);
 
@@ -66,9 +73,25 @@ void SMsgHandler::setEncodings(int nEncodings, const rdr::S32* encodings)
     supportsLEDState();
   if (client.supportsEncoding(pseudoEncodingQEMUKeyEvent) && firstQEMUKeyEvent)
     supportsQEMUKeyEvent();
+  if (client.supportsEncoding(pseudoEncodingExtendedMouseButtons) && firstExtMouseButtonsEvent)
+    supportsExtendedMouseButtons();
 }
 
-void SMsgHandler::handleClipboardCaps(rdr::U32 flags, const rdr::U32* lengths)
+void SMsgHandler::keyEvent(uint32_t /*keysym*/, uint32_t /*keycode*/,
+                           bool /*down*/)
+{
+}
+
+void SMsgHandler::pointerEvent(const Point& /*pos*/,
+                               uint16_t /*buttonMask*/)
+{
+}
+
+void SMsgHandler::clientCutText(const char* /*str*/)
+{
+}
+
+void SMsgHandler::handleClipboardCaps(uint32_t flags, const uint32_t* lengths)
 {
   int i;
 
@@ -101,11 +124,8 @@ void SMsgHandler::handleClipboardCaps(rdr::U32 flags, const rdr::U32* lengths)
       if (lengths[i] == 0)
         vlog.debug("    %s (only notify)", type);
       else {
-        char bytes[1024];
-
-        iecPrefix(lengths[i], "B", bytes, sizeof(bytes));
         vlog.debug("    %s (automatically send up to %s)",
-                   type, bytes);
+                   type, iecPrefix(lengths[i], "B").c_str());
       }
     }
   }
@@ -113,21 +133,21 @@ void SMsgHandler::handleClipboardCaps(rdr::U32 flags, const rdr::U32* lengths)
   client.setClipboardCaps(flags, lengths);
 }
 
-void SMsgHandler::handleClipboardRequest(rdr::U32 flags)
+void SMsgHandler::handleClipboardRequest(uint32_t /*flags*/)
 {
 }
 
-void SMsgHandler::handleClipboardPeek(rdr::U32 flags)
+void SMsgHandler::handleClipboardPeek()
 {
 }
 
-void SMsgHandler::handleClipboardNotify(rdr::U32 flags)
+void SMsgHandler::handleClipboardNotify(uint32_t /*flags*/)
 {
 }
 
-void SMsgHandler::handleClipboardProvide(rdr::U32 flags,
-                                         const size_t* lengths,
-                                         const rdr::U8* const* data)
+void SMsgHandler::handleClipboardProvide(uint32_t /*flags*/,
+                                         const size_t* /*lengths*/,
+                                         const uint8_t* const* /*data*/)
 {
 }
 
@@ -148,5 +168,9 @@ void SMsgHandler::supportsLEDState()
 }
 
 void SMsgHandler::supportsQEMUKeyEvent()
+{
+}
+
+void SMsgHandler::supportsExtendedMouseButtons()
 {
 }

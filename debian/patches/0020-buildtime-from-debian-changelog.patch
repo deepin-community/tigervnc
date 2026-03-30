@@ -1,3 +1,7 @@
+Description: Enable reproducible builds by deriving the build time from the Debian changelog.
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: not-needed
+
 Index: pkg-tigervnc/unix/x0vncserver/buildtime.c
 ===================================================================
 --- pkg-tigervnc.orig/unix/x0vncserver/buildtime.c

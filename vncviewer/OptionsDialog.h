@@ -1,4 +1,4 @@
-/* Copyright 2011 Pierre Ossman <ossman@cendio.se> for Cendio AB
+/* Copyright 2011-2021 Pierre Ossman <ossman@cendio.se> for Cendio AB
  * 
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ class Fl_Round_Button;
 class Fl_Input;
 class Fl_Int_Input;
 class Fl_Choice;
-class MonitorArrangement;
+class Fl_Monitor_Arrangement;
 
 typedef void (OptionsCallback)(void*);
 
@@ -42,10 +42,10 @@ protected:
 public:
   static void showDialog(void);
 
-  static void addCallback(OptionsCallback *cb, void *data = NULL);
+  static void addCallback(OptionsCallback *cb, void *data = nullptr);
   static void removeCallback(OptionsCallback *cb);
 
-  void show(void);
+  void show(void) override;
 
 protected:
   void loadOptions(void);
@@ -54,16 +54,16 @@ protected:
   void createCompressionPage(int tx, int ty, int tw, int th);
   void createSecurityPage(int tx, int ty, int tw, int th);
   void createInputPage(int tx, int ty, int tw, int th);
-  void createScreenPage(int tx, int ty, int tw, int th);
+  void createDisplayPage(int tx, int ty, int tw, int th);
   void createMiscPage(int tx, int ty, int tw, int th);
 
   static void handleAutoselect(Fl_Widget *widget, void *data);
   static void handleCompression(Fl_Widget *widget, void *data);
   static void handleJpeg(Fl_Widget *widget, void *data);
+  static void handleAlwaysCursor(Fl_Widget *widget, void *data);
 
   static void handleX509(Fl_Widget *widget, void *data);
-
-  static void handleDesktopSize(Fl_Widget *widget, void *data);
+  static void handleRSAAES(Fl_Widget *widget, void *data);
 
   static void handleClipboard(Fl_Widget *widget, void *data);
 
@@ -82,6 +82,9 @@ protected:
   Fl_Round_Button *tightButton;
   Fl_Round_Button *zrleButton;
   Fl_Round_Button *hextileButton;
+#ifdef HAVE_H264
+  Fl_Round_Button *h264Button;
+#endif
   Fl_Round_Button *rawButton;
 
   Fl_Group *colorlevelGroup;
@@ -100,6 +103,7 @@ protected:
   Fl_Check_Button *encNoneCheckbox;
   Fl_Check_Button *encTLSCheckbox;
   Fl_Check_Button *encX509Checkbox;
+  Fl_Check_Button *encRSAAESCheckbox;
   Fl_Input *caInput;
   Fl_Input *crlInput;
 
@@ -110,7 +114,14 @@ protected:
 
   /* Input */
   Fl_Check_Button *viewOnlyCheckbox;
+  Fl_Group *mouseGroup;
   Fl_Check_Button *emulateMBCheckbox;
+  Fl_Check_Button *alwaysCursorCheckbox;
+  Fl_Choice *cursorTypeChoice;
+  Fl_Group *keyboardGroup;
+  Fl_Check_Button *systemKeysCheckbox;
+  Fl_Choice *menuKeyChoice;
+  Fl_Group *clipboardGroup;
   Fl_Check_Button *acceptClipboardCheckbox;
 #if !defined(WIN32) && !defined(__APPLE__)
   Fl_Check_Button *setPrimaryCheckbox;
@@ -119,25 +130,22 @@ protected:
 #if !defined(WIN32) && !defined(__APPLE__)
   Fl_Check_Button *sendPrimaryCheckbox;
 #endif
-  Fl_Check_Button *systemKeysCheckbox;
-  Fl_Choice *menuKeyChoice;
 
-  /* Screen */
-  Fl_Check_Button *desktopSizeCheckbox;
-  Fl_Int_Input *desktopWidthInput;
-  Fl_Int_Input *desktopHeightInput;
-  Fl_Check_Button *remoteResizeCheckbox;
-  Fl_Check_Button *fullScreenCheckbox;
-
+  /* Display */
+  Fl_Group *displayModeGroup;
+  Fl_Round_Button *windowedButton;
   Fl_Round_Button *currentMonitorButton;
   Fl_Round_Button *allMonitorsButton;
   Fl_Round_Button *selectedMonitorsButton;
-  MonitorArrangement *monitorArrangement;
+  Fl_Monitor_Arrangement *monitorArrangement;
 
   /* Misc. */
   Fl_Check_Button *sharedCheckbox;
   Fl_Check_Button *reconnectCheckbox;
-  Fl_Check_Button *dotCursorCheckbox;
+
+private:
+  static int fltk_event_handler(int event);
+  static void handleScreenConfigTimeout(void *data);
 };
 
 #endif

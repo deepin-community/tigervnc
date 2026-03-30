@@ -17,6 +17,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <rfb/Region.h>
 #include <rfb/LogWriter.h>
 
@@ -97,8 +101,12 @@ rfb::Region rfb::Region::subtract(const rfb::Region& r) const {
   return ret;
 }
 
-bool rfb::Region::equals(const rfb::Region& r) const {
+bool rfb::Region::operator==(const rfb::Region& r) const {
   return pixman_region_equal(rgn, r.rgn);
+}
+
+bool rfb::Region::operator!=(const rfb::Region& r) const {
+  return !pixman_region_equal(rgn, r.rgn);
 }
 
 int rfb::Region::numRects() const {

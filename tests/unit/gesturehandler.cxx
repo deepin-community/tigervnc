@@ -16,6 +16,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <stdio.h>
 #include <unistd.h>
 
@@ -26,7 +30,7 @@
 class TestClass : public GestureHandler
 {
   protected:
-    virtual void handleGestureEvent(const GestureEvent& event);
+    void handleGestureEvent(const GestureEvent& event) override;
 
   public:
     std::vector<GestureEvent> events;
@@ -1229,7 +1233,7 @@ void testIgnore()
   testIgnoreAfterGesture();
 }
 
-int main(int argc, char** argv)
+int main(int /*argc*/, char** /*argv*/)
 {
   testOneTap();
   testTwoTap();

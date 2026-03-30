@@ -23,7 +23,8 @@
 #ifndef __RFB_SMSGWRITER_H__
 #define __RFB_SMSGWRITER_H__
 
-#include <rdr/types.h>
+#include <stdint.h>
+
 #include <rfb/encodings.h>
 #include <rfb/ScreenSet.h>
 
@@ -42,7 +43,7 @@ namespace rfb {
 
     // writeServerInit() must only be called at the appropriate time in the
     // protocol initialisation.
-    void writeServerInit(rdr::U16 width, rdr::U16 height,
+    void writeServerInit(uint16_t width, uint16_t height,
                          const PixelFormat& pf, const char* name);
 
     // Methods to write normal protocol messages
@@ -50,24 +51,24 @@ namespace rfb {
     // writeSetColourMapEntries() writes a setColourMapEntries message, using
     // the given colour entries.
     void writeSetColourMapEntries(int firstColour, int nColours,
-                                  const rdr::U16 red[],
-                                  const rdr::U16 green[],
-                                  const rdr::U16 blue[]);
+                                  const uint16_t red[],
+                                  const uint16_t green[],
+                                  const uint16_t blue[]);
 
     // writeBell() does the obvious thing.
     void writeBell();
 
     void writeServerCutText(const char* str);
 
-    void writeClipboardCaps(rdr::U32 caps, const rdr::U32* lengths);
-    void writeClipboardRequest(rdr::U32 flags);
-    void writeClipboardPeek(rdr::U32 flags);
-    void writeClipboardNotify(rdr::U32 flags);
-    void writeClipboardProvide(rdr::U32 flags, const size_t* lengths,
-                               const rdr::U8* const* data);
+    void writeClipboardCaps(uint32_t caps, const uint32_t* lengths);
+    void writeClipboardRequest(uint32_t flags);
+    void writeClipboardPeek(uint32_t flags);
+    void writeClipboardNotify(uint32_t flags);
+    void writeClipboardProvide(uint32_t flags, const size_t* lengths,
+                               const uint8_t* const* data);
 
     // writeFence() sends a new fence request or response to the client.
-    void writeFence(rdr::U32 flags, unsigned len, const char data[]);
+    void writeFence(uint32_t flags, unsigned len, const uint8_t data[]);
 
     // writeEndOfContinuousUpdates() indicates that we have left continuous
     // updates mode.
@@ -75,7 +76,7 @@ namespace rfb {
 
     // writeDesktopSize() won't actually write immediately, but will
     // write the relevant pseudo-rectangle as part of the next update.
-    void writeDesktopSize(rdr::U16 reason, rdr::U16 result=0);
+    void writeDesktopSize(uint16_t reason, uint16_t result=0);
 
     void writeSetDesktopName();
 
@@ -91,6 +92,9 @@ namespace rfb {
 
     // And QEMU keyboard event handshake
     void writeQEMUKeyEvent();
+
+    // let the client know we support extended mouse button support
+    void writeExtendedMouseButtonsSupport();
 
     // needFakeUpdate() returns true when an immediate update is needed in
     // order to flush out pseudo-rectangles to the client.
@@ -128,25 +132,26 @@ namespace rfb {
     void writeNoDataRects();
 
     void writeSetDesktopSizeRect(int width, int height);
-    void writeExtendedDesktopSizeRect(rdr::U16 reason, rdr::U16 result,
+    void writeExtendedDesktopSizeRect(uint16_t reason, uint16_t result,
                                       int fb_width, int fb_height,
                                       const ScreenSet& layout);
     void writeSetDesktopNameRect(const char *name);
     void writeSetCursorRect(int width, int height,
                             int hotspotX, int hotspotY,
-                            const void* data, const void* mask);
+                            const uint8_t* data, const uint8_t* mask);
     void writeSetXCursorRect(int width, int height,
                              int hotspotX, int hotspotY,
-                             const void* data, const void* mask);
+                             const uint8_t* data, const uint8_t* mask);
     void writeSetCursorWithAlphaRect(int width, int height,
                                      int hotspotX, int hotspotY,
-                                     const rdr::U8* data);
+                                     const uint8_t* data);
     void writeSetVMwareCursorRect(int width, int height,
                                   int hotspotX, int hotspotY,
-                                  const rdr::U8* data);
+                                  const uint8_t* data);
     void writeSetVMwareCursorPositionRect(int hotspotX, int hotspotY);
-    void writeLEDStateRect(rdr::U8 state);
+    void writeLEDStateRect(uint8_t state);
     void writeQEMUKeyEventRect();
+    void writeExtendedMouseButtonsRect();
 
     ClientParams* client;
     rdr::OutStream* os;
@@ -159,9 +164,10 @@ namespace rfb {
     bool needCursorPos;
     bool needLEDState;
     bool needQEMUKeyEvent;
+    bool needExtMouseButtonsEvent;
 
     typedef struct {
-      rdr::U16 reason, result;
+      uint16_t reason, result;
     } ExtendedDesktopSizeMsg;
 
     std::list<ExtendedDesktopSizeMsg> extendedDesktopSizeMsgs;

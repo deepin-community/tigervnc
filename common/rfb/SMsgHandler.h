@@ -23,17 +23,17 @@
 #ifndef __RFB_SMSGHANDLER_H__
 #define __RFB_SMSGHANDLER_H__
 
-#include <rdr/types.h>
+#include <stdint.h>
+
 #include <rfb/PixelFormat.h>
 #include <rfb/ClientParams.h>
-#include <rfb/InputHandler.h>
 #include <rfb/ScreenSet.h>
 
 namespace rdr { class InStream; }
 
 namespace rfb {
 
-  class SMsgHandler : public InputHandler {
+  class SMsgHandler {
   public:
     SMsgHandler();
     virtual ~SMsgHandler();
@@ -46,25 +46,29 @@ namespace rfb {
     virtual void clientInit(bool shared);
 
     virtual void setPixelFormat(const PixelFormat& pf);
-    virtual void setEncodings(int nEncodings, const rdr::S32* encodings);
+    virtual void setEncodings(int nEncodings, const int32_t* encodings);
     virtual void framebufferUpdateRequest(const Rect& r, bool incremental) = 0;
     virtual void setDesktopSize(int fb_width, int fb_height,
                                 const ScreenSet& layout) = 0;
-    virtual void fence(rdr::U32 flags, unsigned len, const char data[]) = 0;
+    virtual void fence(uint32_t flags, unsigned len, const uint8_t data[]) = 0;
     virtual void enableContinuousUpdates(bool enable,
                                          int x, int y, int w, int h) = 0;
 
-    virtual void handleClipboardCaps(rdr::U32 flags,
-                                     const rdr::U32* lengths);
-    virtual void handleClipboardRequest(rdr::U32 flags);
-    virtual void handleClipboardPeek(rdr::U32 flags);
-    virtual void handleClipboardNotify(rdr::U32 flags);
-    virtual void handleClipboardProvide(rdr::U32 flags,
-                                        const size_t* lengths,
-                                        const rdr::U8* const* data);
+    virtual void keyEvent(uint32_t keysym, uint32_t keycode,
+                          bool down);
+    virtual void pointerEvent(const Point& pos,
+                              uint16_t buttonMask);
 
-    // InputHandler interface
-    // The InputHandler methods will be called for the corresponding messages.
+    virtual void clientCutText(const char* str);
+
+    virtual void handleClipboardCaps(uint32_t flags,
+                                     const uint32_t* lengths);
+    virtual void handleClipboardRequest(uint32_t flags);
+    virtual void handleClipboardPeek();
+    virtual void handleClipboardNotify(uint32_t flags);
+    virtual void handleClipboardProvide(uint32_t flags,
+                                        const size_t* lengths,
+                                        const uint8_t* const* data);
 
     // supportsLocalCursor() is called whenever the status of
     // cp.supportsLocalCursor has changed.  At the moment this happens on a
@@ -93,6 +97,11 @@ namespace rfb {
     // client wants the QEMU Extended Key Event extension. The default
     // handler will send a pseudo-rect back, signalling server support.
     virtual void supportsQEMUKeyEvent();
+
+    // supportsExtendedMouseButtons() is called the first time we detect that the
+    // client supports sending 16 bit mouse button state. This lets us pass more button
+    // states between server and client.
+    virtual void supportsExtendedMouseButtons();
 
     ClientParams client;
   };

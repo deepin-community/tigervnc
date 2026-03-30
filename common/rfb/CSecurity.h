@@ -38,8 +38,6 @@
 #ifndef __RFB_CSECURITY_H__
 #define __RFB_CSECURITY_H__
 
-#include <rfb/UserPasswdGetter.h>
-
 namespace rfb {
   class CConnection;
   class CSecurity {
@@ -48,14 +46,7 @@ namespace rfb {
     virtual ~CSecurity() {}
     virtual bool processMsg() = 0;
     virtual int getType() const = 0;
-    virtual const char* description() const = 0;
     virtual bool isSecure() const { return false; }
-
-    /*
-     * Use variable directly instead of dumb get/set methods.
-     * It MUST be set by viewer.
-     */
-    static UserPasswdGetter *upg;
 
   protected:
     CConnection* cc;

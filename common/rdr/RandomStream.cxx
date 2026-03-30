@@ -16,6 +16,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <rdr/RandomStream.h>
 #include <rdr/Exception.h>
 #include <rfb/LogWriter.h>
@@ -41,14 +45,16 @@ RandomStream::RandomStream()
 {
 #ifdef RFB_HAVE_WINCRYPT
   provider = 0;
-  if (!CryptAcquireContext(&provider, 0, 0, PROV_RSA_FULL, 0)) {
+  if (!CryptAcquireContext(&provider, nullptr, nullptr,
+                           PROV_RSA_FULL, 0)) {
     if (GetLastError() == (DWORD)NTE_BAD_KEYSET) {
-      if (!CryptAcquireContext(&provider, 0, 0, PROV_RSA_FULL, CRYPT_NEWKEYSET)) {
-        vlog.error("unable to create keyset");
+      if (!CryptAcquireContext(&provider, nullptr, nullptr,
+                               PROV_RSA_FULL, CRYPT_NEWKEYSET)) {
+        vlog.error("Unable to create keyset");
         provider = 0;
       }
     } else {
-      vlog.error("unable to acquire context");
+      vlog.error("Unable to acquire context");
       provider = 0;
     }
   }
@@ -63,8 +69,8 @@ RandomStream::RandomStream()
   {
 #endif
 #endif
-    vlog.error("no OS supplied random source - using rand()");
-    seed += (unsigned int) time(0) + getpid() + getpid() * 987654 + rand();
+    vlog.error("No OS supplied random source, using rand()");
+    seed += (unsigned int) time(nullptr) + getpid() + getpid() * 987654 + rand();
     srand(seed);
   }
 }
@@ -79,28 +85,28 @@ RandomStream::~RandomStream() {
 #endif
 }
 
-bool RandomStream::fillBuffer(size_t maxSize) {
+bool RandomStream::fillBuffer() {
 #ifdef RFB_HAVE_WINCRYPT
   if (provider) {
-    if (!CryptGenRandom(provider, maxSize, (U8*)end))
-      throw rdr::SystemException("unable to CryptGenRandom", GetLastError());
-    end += maxSize;
+    if (!CryptGenRandom(provider, availSpace(), (uint8_t*)end))
+      throw rdr::win32_error("Unable to CryptGenRandom", GetLastError());
+    end += availSpace();
   } else {
 #else
 #ifndef WIN32
   if (fp) {
-    size_t n = fread((U8*)end, 1, maxSize, fp);
+    size_t n = fread((uint8_t*)end, 1, availSpace(), fp);
     if (n <= 0)
-      throw rdr::SystemException("reading /dev/urandom or /dev/random failed",
-                                 errno);
+      throw rdr::posix_error("Reading /dev/urandom or /dev/random "
+                             "failed", errno);
     end += n;
   } else {
 #else
   {
 #endif
 #endif
-    for (size_t i=0; i<maxSize; i++)
-      *(U8*)end++ = (int) (256.0*rand()/(RAND_MAX+1.0));
+    for (size_t i=availSpace(); i>0; i--)
+      *(uint8_t*)end++ = (int) (256.0*rand()/(RAND_MAX+1.0));
   }
 
   return true;

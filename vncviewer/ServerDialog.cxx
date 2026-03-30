@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <algorithm>
+#include <libgen.h>
 
 #include <FL/Fl.H>
 #include <FL/Fl_Input.H>
@@ -35,12 +36,17 @@
 #include <FL/Fl_File_Chooser.H>
 
 #include <os/os.h>
-#include <rfb/Exception.h>
-#include <rfb/LogWriter.h>
 
+#include <rdr/Exception.h>
+
+#include <rfb/Hostname.h>
+#include <rfb/LogWriter.h>
+#include <rfb/util.h>
+
+#include "fltk/layout.h"
+#include "fltk/util.h"
 #include "ServerDialog.h"
 #include "OptionsDialog.h"
-#include "fltk_layout.h"
 #include "i18n.h"
 #include "vncviewer.h"
 #include "parameters.h"
@@ -54,62 +60,63 @@ static LogWriter vlog("ServerDialog");
 const char* SERVER_HISTORY="tigervnc.history";
 
 ServerDialog::ServerDialog()
-  : Fl_Window(450, 160, _("VNC Viewer: Connection Details"))
+  : Fl_Window(450, 0, _("VNC viewer: Connection details"))
 {
-  int x, y;
+  int x, y, x2;
   Fl_Button *button;
   Fl_Box *divider;
 
-  int margin = 20;
-  int server_label_width = gui_str_len(_("VNC server:"));
+  x = OUTER_MARGIN;
+  y = OUTER_MARGIN;
 
-  x = margin + server_label_width;
-  y = margin;
-  
-  serverName = new Fl_Input_Choice(x, y, w() - margin*2 - server_label_width, INPUT_HEIGHT, _("VNC server:"));
+  serverName = new Fl_Input_Choice(LBLLEFT(x, y, w() - OUTER_MARGIN*2,
+                                   INPUT_HEIGHT, _("VNC server:")));
+  // Bug fix for wrong background
+  serverName->color(FL_BACKGROUND2_COLOR);
+  y += INPUT_HEIGHT + INNER_MARGIN;
 
-  int adjust = (w() - 20) / 4;
-  int button_width = adjust - margin/2;
+  x2 = x;
 
-  x = margin;
-  y = margin + margin/2 + INPUT_HEIGHT;
-
-  y += margin/2;
-
-  button = new Fl_Button(x, y, button_width, BUTTON_HEIGHT, _("Options..."));
+  button = new Fl_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Options..."));
   button->callback(this->handleOptions, this);
-  
-  x += adjust;
-  
-  button = new Fl_Button(x, y, button_width, BUTTON_HEIGHT, _("Load..."));
+  x2 += BUTTON_WIDTH + INNER_MARGIN;
+
+  button = new Fl_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Load..."));
   button->callback(this->handleLoad, this);
+  x2 += BUTTON_WIDTH + INNER_MARGIN;
 
-  x += adjust;
-
-  button = new Fl_Button(x, y, button_width, BUTTON_HEIGHT, _("Save As..."));
+  button = new Fl_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Save as..."));
   button->callback(this->handleSaveAs, this);
-  
-  x = 0;
-  y += margin/2 + BUTTON_HEIGHT;
+  x2 += BUTTON_WIDTH + INNER_MARGIN;
 
-  divider = new Fl_Box(x, y, w(), 2);
+  y += BUTTON_HEIGHT + INNER_MARGIN;
+
+  divider = new Fl_Box(0, y, w(), 2);
   divider->box(FL_THIN_DOWN_FRAME);
-  
-  x += margin;
-  y += margin/2;
 
-  button = new Fl_Button(x, y, button_width, BUTTON_HEIGHT, _("About..."));
+  y += divider->h() + INNER_MARGIN;
+
+  // Symmetric margin around bottom button bar
+  y += OUTER_MARGIN - INNER_MARGIN;
+
+  button = new Fl_Button(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("About..."));
   button->callback(this->handleAbout, this);
 
-  x = w() - margin - adjust - button_width - 20;
+  x2 = w() - OUTER_MARGIN - BUTTON_WIDTH*2 - INNER_MARGIN*1;
 
-  button = new Fl_Button(x, y, button_width, BUTTON_HEIGHT, _("Cancel"));
+  button = new Fl_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Cancel"));
   button->callback(this->handleCancel, this);
+  x2 += BUTTON_WIDTH + INNER_MARGIN;
 
-  x += adjust;
-
-  button = new Fl_Return_Button(x, y, button_width+20, BUTTON_HEIGHT, _("Connect"));
+  button = new Fl_Return_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Connect"));
   button->callback(this->handleConnect, this);
+  x2 += BUTTON_WIDTH + INNER_MARGIN;
+
+  y += BUTTON_HEIGHT + INNER_MARGIN;
+
+  /* Needed for resize to work sanely */
+  resizable(nullptr);
+  h(y-INNER_MARGIN+OUTER_MARGIN);
 
   callback(this->handleCancel, this);
 }
@@ -129,22 +136,21 @@ void ServerDialog::run(const char* servername, char *newservername)
   dialog.show();
 
   try {
-    size_t i;
-
     dialog.loadServerHistory();
 
     dialog.serverName->clear();
-    for(i = 0; i < dialog.serverHistory.size(); ++i)
-      dialog.serverName->add(dialog.serverHistory[i].c_str());
-  } catch (Exception& e) {
-    vlog.error("%s", e.str());
+    for (const string& entry : dialog.serverHistory)
+      fltk_menu_add(dialog.serverName->menubutton(),
+                    entry.c_str(), 0, nullptr);
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
     fl_alert(_("Unable to load the server history:\n\n%s"),
-             e.str());
+             e.what());
   }
 
   while (dialog.shown()) Fl::wait();
 
-  if (dialog.serverName->value() == NULL) {
+  if (dialog.serverName->value() == nullptr) {
     newservername[0] = '\0';
     return;
   }
@@ -153,17 +159,22 @@ void ServerDialog::run(const char* servername, char *newservername)
   newservername[VNCSERVERNAMELEN - 1] = '\0';
 }
 
-void ServerDialog::handleOptions(Fl_Widget *widget, void *data)
+void ServerDialog::handleOptions(Fl_Widget* /*widget*/, void* /*data*/)
 {
   OptionsDialog::showDialog();
 }
 
 
-void ServerDialog::handleLoad(Fl_Widget *widget, void *data)
+void ServerDialog::handleLoad(Fl_Widget* /*widget*/, void* data)
 {
   ServerDialog *dialog = (ServerDialog*)data;
-  Fl_File_Chooser* file_chooser = new Fl_File_Chooser("", _("TigerVNC configuration (*.tigervnc)"), 
-						      0, _("Select a TigerVNC configuration file"));
+
+  if (dialog->usedDir.empty())
+    dialog->usedDir = os::getuserhomedir();
+
+  Fl_File_Chooser* file_chooser = new Fl_File_Chooser(dialog->usedDir.c_str(),
+                                                      _("TigerVNC configuration (*.tigervnc)"),
+                                                      0, _("Select a TigerVNC configuration file"));
   file_chooser->preview(0);
   file_chooser->previewButton->hide();
   file_chooser->show();
@@ -173,33 +184,37 @@ void ServerDialog::handleLoad(Fl_Widget *widget, void *data)
     Fl::wait();
   
   // Did the user hit cancel?
-  if (file_chooser->value() == NULL) {
+  if (file_chooser->value() == nullptr) {
     delete(file_chooser);
     return;
   }
   
   const char* filename = file_chooser->value();
+  dialog->updateUsedDir(filename);
 
   try {
     dialog->serverName->value(loadViewerParameters(filename));
-  } catch (Exception& e) {
-    vlog.error("%s", e.str());
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
     fl_alert(_("Unable to load the specified configuration file:\n\n%s"),
-             e.str());
+             e.what());
   }
 
   delete(file_chooser);
 }
 
 
-void ServerDialog::handleSaveAs(Fl_Widget *widget, void *data)
+void ServerDialog::handleSaveAs(Fl_Widget* /*widget*/, void* data)
 { 
   ServerDialog *dialog = (ServerDialog*)data;
   const char* servername = dialog->serverName->value();
   const char* filename;
-
-  Fl_File_Chooser* file_chooser = new Fl_File_Chooser("", _("TigerVNC configuration (*.tigervnc)"), 
-						      2, _("Save the TigerVNC configuration to file"));
+  if (dialog->usedDir.empty())
+    dialog->usedDir = os::getuserhomedir();
+  
+  Fl_File_Chooser* file_chooser = new Fl_File_Chooser(dialog->usedDir.c_str(),
+                                                      _("TigerVNC configuration (*.tigervnc)"),
+                                                      2, _("Save the TigerVNC configuration to file"));
   
   file_chooser->preview(0);
   file_chooser->previewButton->hide();
@@ -212,12 +227,13 @@ void ServerDialog::handleSaveAs(Fl_Widget *widget, void *data)
       Fl::wait();
     
     // Did the user hit cancel?
-    if (file_chooser->value() == NULL) {
+    if (file_chooser->value() == nullptr) {
       delete(file_chooser);
       return;
     }
     
     filename = file_chooser->value();
+    dialog->updateUsedDir(filename);
     
     FILE* f = fopen(filename, "r");
     if (f) {
@@ -225,12 +241,12 @@ void ServerDialog::handleSaveAs(Fl_Widget *widget, void *data)
       // The file already exists.
       fclose(f);
       int overwrite_choice = fl_choice(_("%s already exists. Do you want to overwrite?"), 
-				       _("Overwrite"), _("No"), NULL, filename);
+                                       _("Overwrite"), _("No"), nullptr, filename);
       if (overwrite_choice == 1) {
 
-	// If the user doesn't want to overwrite:
-	file_chooser->show();
-	continue;
+        // If the user doesn't want to overwrite:
+        file_chooser->show();
+        continue;
       }
     }
 
@@ -239,23 +255,23 @@ void ServerDialog::handleSaveAs(Fl_Widget *widget, void *data)
   
   try {
     saveViewerParameters(filename, servername);
-  } catch (Exception& e) {
-    vlog.error("%s", e.str());
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
     fl_alert(_("Unable to save the specified configuration "
-               "file:\n\n%s"), e.str());
+               "file:\n\n%s"), e.what());
   }
   
   delete(file_chooser);
 }
 
 
-void ServerDialog::handleAbout(Fl_Widget *widget, void *data)
+void ServerDialog::handleAbout(Fl_Widget* /*widget*/, void* /*data*/)
 {
   about_vncviewer();
 }
 
 
-void ServerDialog::handleCancel(Fl_Widget *widget, void *data)
+void ServerDialog::handleCancel(Fl_Widget* /*widget*/, void* data)
 {
   ServerDialog *dialog = (ServerDialog*)data;
 
@@ -264,7 +280,7 @@ void ServerDialog::handleCancel(Fl_Widget *widget, void *data)
 }
 
 
-void ServerDialog::handleConnect(Fl_Widget *widget, void *data)
+void ServerDialog::handleConnect(Fl_Widget* /*widget*/, void *data)
 {
   ServerDialog *dialog = (ServerDialog*)data;
   const char* servername = dialog->serverName->value();
@@ -272,44 +288,70 @@ void ServerDialog::handleConnect(Fl_Widget *widget, void *data)
   dialog->hide();
 
   try {
-    saveViewerParameters(NULL, servername);
-  } catch (Exception& e) {
-    vlog.error("%s", e.str());
+    saveViewerParameters(nullptr, servername);
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
     fl_alert(_("Unable to save the default configuration:\n\n%s"),
-             e.str());
+             e.what());
   }
 
+  // avoid duplicates in the history
+  dialog->serverHistory.remove(servername);
+  dialog->serverHistory.insert(dialog->serverHistory.begin(), servername);
+
   try {
-    vector<string>::iterator elem = std::find(dialog->serverHistory.begin(), dialog->serverHistory.end(), servername);
-    // avoid duplicates in the history
-    if(dialog->serverHistory.end() == elem) {
-      dialog->serverHistory.insert(dialog->serverHistory.begin(), servername);
-      dialog->saveServerHistory();
-    }
-  } catch (Exception& e) {
-    vlog.error("%s", e.str());
+    dialog->saveServerHistory();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
     fl_alert(_("Unable to save the server history:\n\n%s"),
-             e.str());
+             e.what());
   }
+}
+
+
+static bool same_server(const string& a, const string& b)
+{
+  string hostA, hostB;
+  int portA, portB;
+
+#ifndef WIN32
+  if ((a.find("/") != string::npos) || (b.find("/") != string::npos))
+    return a == b;
+#endif
+
+  try {
+    getHostAndPort(a.c_str(), &hostA, &portA);
+    getHostAndPort(b.c_str(), &hostB, &portB);
+  } catch (std::exception& e) {
+    return false;
+  }
+
+  if (hostA != hostB)
+    return false;
+
+  if (portA != portB)
+    return false;
+
+  return true;
 }
 
 
 void ServerDialog::loadServerHistory()
 {
+  list<string> rawHistory;
+
   serverHistory.clear();
 
 #ifdef _WIN32
-  loadHistoryFromRegKey(serverHistory);
-  return;
-#endif
+  rawHistory = loadHistoryFromRegKey();
+#else
 
-  char* homeDir = NULL;
-  if (getvnchomedir(&homeDir) == -1)
-    throw Exception(_("Could not obtain the home directory path"));
+  const char* stateDir = os::getvncstatedir();
+  if (stateDir == nullptr)
+    throw std::runtime_error(_("Could not determine VNC state directory path"));
 
   char filepath[PATH_MAX];
-  snprintf(filepath, sizeof(filepath), "%s%s", homeDir, SERVER_HISTORY);
-  delete[] homeDir;
+  snprintf(filepath, sizeof(filepath), "%s/%s", stateDir, SERVER_HISTORY);
 
   /* Read server history from file */
   FILE* f = fopen(filepath, "r");
@@ -318,8 +360,8 @@ void ServerDialog::loadServerHistory()
       // no history file
       return;
     }
-    throw Exception(_("Could not open \"%s\": %s"),
-                    filepath, strerror(errno));
+    std::string msg = format(_("Could not open \"%s\""), filepath);
+    throw rdr::posix_error(msg.c_str(), errno);
   }
 
   int lineNr = 0;
@@ -333,30 +375,46 @@ void ServerDialog::loadServerHistory()
         break;
 
       fclose(f);
-      throw Exception(_("Failed to read line %d in file %s: %s"),
-                      lineNr, filepath, strerror(errno));
-    }
-
-    if (strlen(line) == (sizeof(line) - 1)) {
-      fclose(f);
-      throw Exception(_("Failed to read line %d in file %s: %s"),
-                      lineNr, filepath, _("Line too long"));
+      std::string msg = format(_("Failed to read line %d in "
+                                 "file \"%s\""), lineNr, filepath);
+      throw rdr::posix_error(msg.c_str(), errno);
     }
 
     int len = strlen(line);
-    if (line[len-1] == '\n') {
+
+    if (len == (sizeof(line) - 1)) {
+      fclose(f);
+      std::string msg = format(_("Failed to read line %d in "
+                                 "file \"%s\""), lineNr, filepath);
+      throw std::runtime_error(format("%s: %s", msg.c_str(),
+                                      _("Line too long")));
+    }
+
+    if ((len > 0) && (line[len-1] == '\n')) {
       line[len-1] = '\0';
       len--;
     }
-    if (line[len-1] == '\r') {
+    if ((len > 0) && (line[len-1] == '\r')) {
       line[len-1] = '\0';
       len--;
     }
 
-    serverHistory.push_back(line);
+    if (len == 0)
+      continue;
+
+    rawHistory.push_back(line);
   }
 
   fclose(f);
+#endif
+
+  // Filter out duplicates, even if they have different formats
+  for (const string& entry : rawHistory) {
+    if (std::find_if(serverHistory.begin(), serverHistory.end(),
+                     [&entry](const string& s) { return same_server(s, entry); }) != serverHistory.end())
+      continue;
+    serverHistory.push_back(entry);
+  }
 }
 
 void ServerDialog::saveServerHistory()
@@ -366,23 +424,34 @@ void ServerDialog::saveServerHistory()
   return;
 #endif
 
-  char* homeDir = NULL;
-  if (getvnchomedir(&homeDir) == -1)
-    throw Exception(_("Could not obtain the home directory path"));
+  const char* stateDir = os::getvncstatedir();
+  if (stateDir == nullptr)
+    throw std::runtime_error(_("Could not determine VNC state directory path"));
 
   char filepath[PATH_MAX];
-  snprintf(filepath, sizeof(filepath), "%s%s", homeDir, SERVER_HISTORY);
-  delete[] homeDir;
+  snprintf(filepath, sizeof(filepath), "%s/%s", stateDir, SERVER_HISTORY);
 
   /* Write server history to file */
   FILE* f = fopen(filepath, "w+");
-  if (!f)
-    throw Exception(_("Could not open \"%s\": %s"),
-                    filepath, strerror(errno));
+  if (!f) {
+    std::string msg = format(_("Could not open \"%s\""), filepath);
+    throw rdr::posix_error(msg.c_str(), errno);
+  }
 
   // Save the last X elements to the config file.
-  for(size_t i=0; i < serverHistory.size() && i <= SERVER_HISTORY_SIZE; i++)
-    fprintf(f, "%s\n", serverHistory[i].c_str());
+  size_t count = 0;
+  for (const string& entry : serverHistory) {
+    if (++count > SERVER_HISTORY_SIZE)
+      break;
+    fprintf(f, "%s\n", entry.c_str());
+  }
 
   fclose(f);
+}
+
+void ServerDialog::updateUsedDir(const char* filename)
+{
+  char * name = strdup(filename);
+  usedDir = dirname(name);
+  free(name);
 }

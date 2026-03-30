@@ -24,9 +24,12 @@
 #include <rfb/SSecurityPlain.h>
 #include <rfb/SConnection.h>
 #include <rfb/Exception.h>
+#include <rfb/util.h>
 #include <rdr/InStream.h>
 #if !defined(WIN32) && !defined(__APPLE__)
 #include <rfb/UnixPasswordValidator.h>
+#include <unistd.h>
+#include <pwd.h>
 #endif
 #ifdef WIN32
 #include <rfb/WinPasswdValidator.h>
@@ -36,38 +39,43 @@ using namespace rfb;
 
 StringParameter PasswordValidator::plainUsers
 ("PlainUsers",
- "Users permitted to access via Plain security type (including TLSPlain, X509Plain etc.)",
+ "Users permitted to access via Plain security type (including TLSPlain, X509Plain etc.)"
+#ifdef HAVE_NETTLE
+ " or RSA-AES security types (RA2, RA2ne, RA2_256, RA2ne_256)"
+#endif
+ ,
  "");
 
 bool PasswordValidator::validUser(const char* username)
 {
-  CharArray users(plainUsers.getValueStr()), user;
+  std::vector<std::string> users;
 
-  while (users.buf) {
-    strSplit(users.buf, ',', &user.buf, &users.buf);
-#ifdef WIN32
-    if (0 == stricmp(user.buf, "*"))
-	  return true;
-    if (0 == stricmp(user.buf, username))
-	  return true;
-#else
-    if (!strcmp(user.buf, "*"))
-	  return true;
-    if (!strcmp(user.buf, username))
-	  return true;
+  users = split(plainUsers, ',');
+
+  for (size_t i = 0; i < users.size(); i++) {
+    if (users[i] == "*")
+      return true;
+#if !defined(WIN32) && !defined(__APPLE__)
+    if (users[i] == "%u") {
+      struct passwd *pw = getpwnam(username);
+      if (pw && pw->pw_uid == getuid())
+        return true;
+    }
 #endif
+    if (users[i] == username)
+      return true;
   }
   return false;
 }
 
-SSecurityPlain::SSecurityPlain(SConnection* sc) : SSecurity(sc)
+SSecurityPlain::SSecurityPlain(SConnection* sc_) : SSecurity(sc_)
 {
 #ifdef WIN32
   valid = new WinPasswdValidator();
 #elif !defined(__APPLE__)
   valid = new UnixPasswordValidator();
 #else
-  valid = NULL;
+  valid = nullptr;
 #endif
 
   state = 0;
@@ -76,24 +84,22 @@ SSecurityPlain::SSecurityPlain(SConnection* sc) : SSecurity(sc)
 bool SSecurityPlain::processMsg()
 {
   rdr::InStream* is = sc->getInStream();
-  char* pw;
-  char *uname;
-  CharArray password;
+  char password[1024];
 
   if (!valid)
-    throw AuthFailureException("No password validator configured");
+    throw std::logic_error("No password validator configured");
 
   if (state == 0) {
     if (!is->hasData(8))
       return false;
 
     ulen = is->readU32();
-    if (ulen > MaxSaneUsernameLength)
-      throw AuthFailureException("Too long username");
+    if (ulen >= sizeof(username))
+      throw auth_error("Too long username");
 
     plen = is->readU32();
-    if (plen > MaxSanePasswordLength)
-      throw AuthFailureException("Too long password");
+    if (plen >= sizeof(password))
+      throw auth_error("Too long password");
 
     state = 1;
   }
@@ -102,17 +108,13 @@ bool SSecurityPlain::processMsg()
     if (!is->hasData(ulen + plen))
       return false;
     state = 2;
-    pw = new char[plen + 1];
-    uname = new char[ulen + 1];
-    username.replaceBuf(uname);
-    password.replaceBuf(pw);
-    is->readBytes(uname, ulen);
-    is->readBytes(pw, plen);
-    pw[plen] = 0;
-    uname[ulen] = 0;
+    is->readBytes((uint8_t*)username, ulen);
+    is->readBytes((uint8_t*)password, plen);
+    password[plen] = 0;
+    username[ulen] = 0;
     plen = 0;
-    if (!valid->validate(sc, uname, pw))
-      throw AuthFailureException("invalid password or username");
+    if (!valid->validate(sc, username, password))
+      throw auth_error("Authentication failed");
   }
 
   return true;

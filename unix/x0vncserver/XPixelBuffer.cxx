@@ -21,6 +21,10 @@
 // XPixelBuffer.cxx
 //
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <vector>
 #include <rfb/Region.h>
 #include <X11/Xlib.h>
@@ -31,7 +35,7 @@ using namespace rfb;
 XPixelBuffer::XPixelBuffer(Display *dpy, ImageFactory &factory,
                            const Rect &rect)
   : FullFramePixelBuffer(),
-    m_poller(0),
+    m_poller(nullptr),
     m_dpy(dpy),
     m_image(factory.newImage(dpy, rect.width(), rect.height())),
     m_offsetLeft(rect.tl.x),
@@ -50,7 +54,7 @@ XPixelBuffer::XPixelBuffer(Display *dpy, ImageFactory &factory,
                        ffs(m_image->xim->blue_mask) - 1);
 
   // Set up the remaining data of the parent class.
-  setBuffer(rect.width(), rect.height(), (rdr::U8 *)m_image->xim->data,
+  setBuffer(rect.width(), rect.height(), (uint8_t *)m_image->xim->data,
             m_image->xim->bytes_per_line * 8 / m_image->xim->bits_per_pixel);
 
   // Get initial screen image from the X display.

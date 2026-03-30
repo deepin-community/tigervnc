@@ -44,7 +44,7 @@
 #
 # This section contains entries that should be true for all users.
 
-# $fontPath should be a comma separated list of fonts to be added to the font
+# $fontPath should be a comma-separated list of fonts to be added to the font
 #           path. If not specified, the default will apply.
 # Example:
 #       $fontPath = "tcp/localhost:7100"; # would force Xtigervnc to use xfs.
@@ -60,14 +60,17 @@
 #
 # Default: $fontPath = undef; # Use Xtigervnc built-in default font path.
 
-# $PAMService is the PAM service used for plain password authentication
-#             if one of the security types Plain, TLSPlain, and
-#             X509Plain is used.
+# $PAMService specifies the PAM service utilized for Unix username and password
+#             authentication. This service is used for the *Plain security types
+#             (i.e., Plain, TLSPlain, and X509Plain) or when $RequireUsername is
+#             "yes" and any of the RSA-AES security types (i.e., RA2, RA2ne,
+#             RA2_256, and RA2ne_256) is used to establish the connection to the
+#             VNC server.
 #
 # Default: $PAMService = "tigervnc"; # if /etc/pam.d/vnc is absent.
 # Default: $PAMService = "vnc";      # if /etc/pam.d/vnc is present.
 
-# $sslAutoGenCertCommand is used to auto generate the certificate
+# $sslAutoGenCertCommand is used to auto-generate the certificate
 # for the X509Cert and X509Key options. The configuration for
 # openssl is taken from /etc/tigervnc/openssl.cnf where we substitute
 # @HostName@ by the fully qualified domain name of the host.
@@ -77,6 +80,15 @@
 #
 # Default: $sslAutoGenCertCommand =
 #  "openssl req -newkey ec:/etc/tigervnc/openssl-ecparams.pem -x509 -days 2190 -nodes";
+
+# $sslAutoGenRSAKeyCommand is used to auto-generate an RSA key for the RSA-AES
+# security types.
+#
+# Example: $sslAutoGenRSAKeyCommand =
+#  "openssl genrsa -out RSAKeyFile 2048";
+#
+# Default: $sslAutoGenRSAKeyCommand =
+#  "openssl genrsa -out RSAKeyFile 4096";
 
 # User configuration
 # ------------------
@@ -130,7 +142,7 @@
 #           framebuffer width & height. A default can be derived if the
 #           tigervncserver is run in a X session -- either $ENV{DISPLAY} or the
 #           session given by $getDefaultFrom -- with the -xdisplaydefaults
-#           option. The geometry can also be changed at the commandline with
+#           option. The geometry can also be changed at the command line with
 #           the -geometry option. Otherwise, the fixed default provided below
 #           will be used.
 #
@@ -141,7 +153,7 @@
 #              A default can be derived if the tigervncserver is run in a
 #              X session -- either $ENV{DISPLAY} or the session given by
 #              $getDefaultFrom -- with the -xdisplaydefaults option. The depth
-#              and pixelformat can also be changed at the commandline with
+#              and pixelformat can also be changed at the command line with
 #              the -depth and -pixelformat options. Otherwise, the fixed
 #              defaults provided below for the two settings will be used.
 #
@@ -192,37 +204,58 @@
 #                              #    does contain at least on *None security type.
 # Default: $localhost = "no";  # Otherwise
 
-# $SecurityTypes a comma separated list of security types the TigerVNC
-#                server will offer. Available are None, VncAuth, Plain,
-#                TLSNone, TLSVnc, TLSPlain, X509None, X509Vnc, and X509Plain.
+# $SecurityTypes is a comma-separated list of security types the TigerVNC server
+#                will offer. Available are None, VncAuth, Plain, TLSNone, TLSVnc,
+#                TLSPlain, X509None, X509Vnc, X509Plain, RA2, RA2ne, RA2_256, and
+#                RA2ne_256.
 #
 # Example: $SecurityTypes = "X509Vnc,X509Plain,TLSVnc,TLSPlain,VncAuth";
 #
 # Default: $SecurityTypes = "VncAuth"        # if localhost is enabled (the default)
 # Default: $SecurityTypes = "VncAuth,TLSVnc" # otherwise
 
-# $PlainUsers a comma separated list of users that are authorized to access
-#             the VNC server if the security types Plain, TLSPlain, or
-#             X509Plain are used to establish the connection. The password
-#             for these users are check by the system via the PAM service
-#             specified via $PAMService option.
+# $RequireUsername specifies if authentication should be performed via Unix
+#                  username and password (yes) or the VNC password file (no)
+#                  when utilizing one of the RSA-AES security types (i.e., RA2,
+#                  RA2ne, RA2_256, or RA2ne_256).
+#
+# Example: $RequireUsername = "yes";
+# Default: $RequireUsername = "no";
+
+# $PlainUsers specifies a comma-separated list of user names that are allowed to
+#             authenticate via any of the *Plain security types (i.e., Plain,
+#             TLSPlain, etc.) or the RSA-AES security types in the case that
+#             $RequireUsername is "yes". Specify "*" to allow any user to
+#             authenticate using these security types. The default only allows
+#             the user who has started the VNC server. The VNC server checks the
+#             password for a user via the PAM service given by the $PAMService
+#             option.
 #
 # Example: $PlainUsers = "user1,user2";
+# Example: $PlainUsers = "*";
 #
-# Default: $PlainUsers only contains the user starting the tigervncserver.
+# Default: $PlainUsers only contains the user starting the VNC server.
 
-# $X509Cert and $X509Key contan the filenames for a certificate and its
-#           key that is used for the security types X509None, X509Vnc,
-#           and X509Plain.
+# $X509Cert and $X509Key contain the filenames for a certificate and key used
+#           by the security types X509None, X509Vnc, and X509Plain.
 #
-# Default: $X509Cert is auto generated if absent and stored in
+# Default: $X509Cert is auto-generated if absent and stored in
 #                    ~/.vnc/${HOSTFQDN}-SrvCert.pem
-# Default: $X509Key  is auto generated if absent and stored in
+# Default: $X509Key  is auto-generated if absent and stored in
 #                    ~/.vnc/${HOSTFQDN}-SrvKey.pem
 #
-# If filenames are given for $X509Cert and $X509Key either here or
-# on the commandline via -X509Cert and -X509Key options, then
-# the auto generation is disabled and the user has to take care
-# that usable certificates are present.
+# If filenames are given for $X509Cert and $X509Key either here or on the
+# command line via -X509Cert and -X509Key options, then the auto-generation is
+# disabled, and the user has to take care that a usable certificate is present.
+
+# $RSAKey contains the filenames for an RSA key in PEM format used by the
+#         RSA-AES security types.
+#
+# Default: $RSAKey   is auto-generated if absent and stored in
+#                    ~/.vnc/${HOSTFQDN}-SrvRsaKey.pem
+#
+# If a filename is given for $RSAKey either here or on the command line via the
+# -RSAKey option, then the auto-generation is disabled, and the user has to take
+# care that a usable RSA key is present.
 
 1;

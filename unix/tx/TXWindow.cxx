@@ -19,19 +19,24 @@
 // TXWindow.cxx
 //
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <X11/Xatom.h>
 #include "TXWindow.h"
 #include <list>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <vector>
-#include <rfb/util.h>
 
 std::list<TXWindow*> windows;
 
 Atom wmProtocols, wmDeleteWindow, wmTakeFocus;
 Atom xaTIMESTAMP, xaTARGETS, xaSELECTION_TIME, xaSELECTION_STRING;
-Atom xaCLIPBOARD;
+Atom xaCLIPBOARD, xaUTF8_STRING, xaINCR;
 unsigned long TXWindow::black, TXWindow::white;
 unsigned long TXWindow::defaultFg, TXWindow::defaultBg;
 unsigned long TXWindow::lightBg, TXWindow::darkBg;
@@ -39,15 +44,15 @@ unsigned long TXWindow::disabledFg, TXWindow::disabledBg;
 unsigned long TXWindow::enabledBg;
 unsigned long TXWindow::scrollbarBg;
 Colormap TXWindow::cmap = 0;
-GC TXWindow::defaultGC = 0;
+GC TXWindow::defaultGC = nullptr;
 Font TXWindow::defaultFont = 0;
-XFontStruct* TXWindow::defaultFS = 0;
+XFontStruct* TXWindow::defaultFS = nullptr;
 Time TXWindow::cutBufferTime = 0;
 Pixmap TXWindow::dot = 0, TXWindow::tick = 0;
 const int TXWindow::dotSize = 4, TXWindow::tickSize = 8;
 char* TXWindow::defaultWindowClass;
 
-TXGlobalEventHandler* TXWindow::globalEventHandler = NULL;
+TXGlobalEventHandler* TXWindow::globalEventHandler = nullptr;
 
 void TXWindow::init(Display* dpy, const char* defaultWindowClass_)
 {
@@ -60,6 +65,8 @@ void TXWindow::init(Display* dpy, const char* defaultWindowClass_)
   xaSELECTION_TIME = XInternAtom(dpy, "SELECTION_TIME", False);
   xaSELECTION_STRING = XInternAtom(dpy, "SELECTION_STRING", False);
   xaCLIPBOARD = XInternAtom(dpy, "CLIPBOARD", False);
+  xaUTF8_STRING = XInternAtom(dpy, "UTF8_STRING", False);
+  xaINCR = XInternAtom(dpy, "INCR", False);
   XColor cols[6];
   cols[0].red = cols[0].green = cols[0].blue = 0x0000;
   cols[1].red = cols[1].green = cols[1].blue = 0xbbbb;
@@ -74,7 +81,7 @@ void TXWindow::init(Display* dpy, const char* defaultWindowClass_)
   darkBg = disabledFg = cols[3].pixel;
   scrollbarBg = cols[4].pixel;
   white = enabledBg = cols[5].pixel;
-  defaultGC = XCreateGC(dpy, DefaultRootWindow(dpy), 0, 0);
+  defaultGC = XCreateGC(dpy, DefaultRootWindow(dpy), 0, nullptr);
   defaultFS
     = XLoadQueryFont(dpy, "-*-helvetica-medium-r-*-*-12-*-*-*-*-*-*-*");
   if (!defaultFS) {
@@ -96,7 +103,7 @@ void TXWindow::init(Display* dpy, const char* defaultWindowClass_)
   static unsigned char tickBits[] = { 0x80, 0xc0, 0xe2, 0x76, 0x3e, 0x1c, 0x08, 0x00};
   tick = XCreateBitmapFromData(dpy, DefaultRootWindow(dpy), (char*)tickBits,
                                tickSize, tickSize);
-  defaultWindowClass = rfb::strDup(defaultWindowClass_);
+  defaultWindowClass = strdup(defaultWindowClass_);
 }
 
 void TXWindow::handleXEvents(Display* dpy)
@@ -253,7 +260,8 @@ Window TXWindow::windowWithName(Display* dpy, Window top, const char* name)
 TXWindow::TXWindow(Display* dpy_, int w, int h, TXWindow* parent_,
                    int borderWidth)
   : dpy(dpy_), xPad(3), yPad(3), bevel(2), parent(parent_), width_(w),
-    height_(h), eventHandler(0), dwc(0), eventMask(0), toplevel_(false)
+    height_(h), eventHandler(nullptr), dwc(nullptr), eventMask(0),
+    toplevel_(false)
 {
   sizeHints.flags = 0;
   XSetWindowAttributes attr;
@@ -261,7 +269,8 @@ TXWindow::TXWindow(Display* dpy_, int w, int h, TXWindow* parent_,
   attr.border_pixel = 0;
   Window par = parent ? parent->win() : DefaultRootWindow(dpy);
   win_ = XCreateWindow(dpy, par, 0, 0, width_, height_, borderWidth,
-                      CopyFromParent, CopyFromParent, CopyFromParent,
+                      CopyFromParent, CopyFromParent,
+                      (Visual*)CopyFromParent,
                       CWBackPixel | CWBorderPixel, &attr);
   if (parent) map();
 
@@ -287,7 +296,7 @@ void TXWindow::toplevel(const char* name, TXDeleteWindowCallback* dwc_,
   if (!windowClass) windowClass = defaultWindowClass;
   classHint.res_name = (char*)name;
   classHint.res_class = (char*)windowClass;
-  XSetWMProperties(dpy, win(), 0, 0, argv, argc,
+  XSetWMProperties(dpy, win(), nullptr, nullptr, argv, argc,
                    &sizeHints, &wmHints, &classHint);
   XStoreName(dpy, win(), name);
   XSetIconName(dpy, win(), name);
@@ -304,6 +313,7 @@ void TXWindow::toplevel(const char* name, TXDeleteWindowCallback* dwc_,
 void TXWindow::setName(const char* name)
 {
   XClassHint classHint;
+  memset(&classHint, 0, sizeof(classHint));
   XGetClassHint(dpy, win(), &classHint);
   XFree(classHint.res_name);
   classHint.res_name = (char*)name;
@@ -438,7 +448,7 @@ void TXWindow::handleXEvent(XEvent* ev)
         break;
       }
     }
-    selectionNotify(&ev->xselection, 0, 0, 0, 0);
+    selectionNotify(&ev->xselection, 0, 0, 0, nullptr);
     break;
 
   case SelectionRequest:
@@ -457,17 +467,18 @@ void TXWindow::handleXEvent(XEvent* ev)
       } else {
         se.property = ev->xselectionrequest.property;
         if (se.target == xaTARGETS) {
-          Atom targets[2];
+          Atom targets[3];
           targets[0] = xaTIMESTAMP;
           targets[1] = XA_STRING;
+          targets[2] = xaUTF8_STRING;
           XChangeProperty(dpy, se.requestor, se.property, XA_ATOM, 32,
-                          PropModeReplace, (unsigned char*)targets, 2);
+                          PropModeReplace, (unsigned char*)targets, 3);
         } else if (se.target == xaTIMESTAMP) {
-          rdr::U32 t = selectionOwnTime[se.selection];
+          Time t = selectionOwnTime[se.selection];
           XChangeProperty(dpy, se.requestor, se.property, XA_INTEGER, 32,
                           PropModeReplace, (unsigned char*)&t, 1);
-        } else if (se.target == XA_STRING) {
-          if (!selectionRequest(se.requestor, se.selection, se.property))
+        } else if (se.target == XA_STRING || se.target == xaUTF8_STRING) {
+          if (!selectionRequest(se.requestor, se.selection, se.target, se.property))
             se.property = None;
         } else {
           se.property = None;

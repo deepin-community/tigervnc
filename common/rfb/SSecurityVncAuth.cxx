@@ -21,14 +21,18 @@
 // XXX not thread-safe, because d3des isn't - do we need to worry about this?
 //
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <rfb/SSecurityVncAuth.h>
 #include <rdr/RandomStream.h>
 #include <rfb/SConnection.h>
-#include <rfb/Password.h>
 #include <rfb/Configuration.h>
 #include <rfb/LogWriter.h>
-#include <rfb/util.h>
 #include <rfb/Exception.h>
+#include <rfb/obfuscate.h>
+#include <assert.h>
 #include <string.h>
 #include <stdio.h>
 extern "C" {
@@ -41,28 +45,28 @@ using namespace rfb;
 static LogWriter vlog("SVncAuth");
 
 StringParameter SSecurityVncAuth::vncAuthPasswdFile
-("PasswordFile", "Password file for VNC authentication", "", ConfServer);
+("PasswordFile", "Password file for VNC authentication", "");
 AliasParameter rfbauth("rfbauth", "Alias for PasswordFile",
-		       &SSecurityVncAuth::vncAuthPasswdFile, ConfServer);
+		       &SSecurityVncAuth::vncAuthPasswdFile);
 VncAuthPasswdParameter SSecurityVncAuth::vncAuthPasswd
 ("Password", "Obfuscated binary encoding of the password which clients must supply to "
  "access the server", &SSecurityVncAuth::vncAuthPasswdFile);
 
-SSecurityVncAuth::SSecurityVncAuth(SConnection* sc)
-  : SSecurity(sc), sentChallenge(false),
-    pg(&vncAuthPasswd), accessRights(0)
+SSecurityVncAuth::SSecurityVncAuth(SConnection* sc_)
+  : SSecurity(sc_), sentChallenge(false),
+    pg(&vncAuthPasswd), accessRights(AccessNone)
 {
 }
 
-bool SSecurityVncAuth::verifyResponse(const PlainPasswd &password)
+bool SSecurityVncAuth::verifyResponse(const char* password)
 {
-  rdr::U8 expectedResponse[vncAuthChallengeSize];
+  uint8_t expectedResponse[vncAuthChallengeSize];
 
   // Calculate the expected response
-  rdr::U8 key[8];
-  int pwdLen = strlen(password.buf);
+  uint8_t key[8];
+  int pwdLen = strlen(password);
   for (int i=0; i<8; i++)
-    key[i] = i<pwdLen ? password.buf[i] : 0;
+    key[i] = i<pwdLen ? password[i] : 0;
   deskey(key, EN0);
   for (int j = 0; j < vncAuthChallengeSize; j += 8)
     des(challenge+j, expectedResponse+j);
@@ -79,7 +83,7 @@ bool SSecurityVncAuth::processMsg()
   if (!sentChallenge) {
     rdr::RandomStream rs;
     if (!rs.hasData(vncAuthChallengeSize))
-      throw Exception("Could not generate random data for VNC auth challenge");
+      throw std::runtime_error("Could not generate random data for VNC auth challenge");
     rs.readBytes(challenge, vncAuthChallengeSize);
     os->writeBytes(challenge, vncAuthChallengeSize);
     os->flush();
@@ -92,65 +96,69 @@ bool SSecurityVncAuth::processMsg()
 
   is->readBytes(response, vncAuthChallengeSize);
 
-  PlainPasswd passwd, passwdReadOnly;
+  std::string passwd, passwdReadOnly;
   pg->getVncAuthPasswd(&passwd, &passwdReadOnly);
 
-  if (!passwd.buf)
-    throw AuthFailureException("No password configured for VNC Auth");
+  if (passwd.empty())
+    throw std::runtime_error("No password configured");
 
-  if (verifyResponse(passwd)) {
-    accessRights = SConnection::AccessDefault;
+  if (verifyResponse(passwd.c_str())) {
+    accessRights = AccessDefault;
     return true;
   }
 
-  if (passwdReadOnly.buf && verifyResponse(passwdReadOnly)) {
-    accessRights = SConnection::AccessView;
+  if (!passwdReadOnly.empty() &&
+      verifyResponse(passwdReadOnly.c_str())) {
+    accessRights = AccessView;
     return true;
   }
 
-  throw AuthFailureException();
+  throw auth_error("Authentication failed");
 }
 
-VncAuthPasswdParameter::VncAuthPasswdParameter(const char* name,
+VncAuthPasswdParameter::VncAuthPasswdParameter(const char* name_,
                                                const char* desc,
                                                StringParameter* passwdFile_)
-: BinaryParameter(name, desc, 0, 0, ConfServer), passwdFile(passwdFile_) {
+: BinaryParameter(name_, desc, nullptr, 0),
+  passwdFile(passwdFile_)
+{
 }
 
-void VncAuthPasswdParameter::getVncAuthPasswd(PlainPasswd *password, PlainPasswd *readOnlyPassword) {
-  ObfuscatedPasswd obfuscated, obfuscatedReadOnly;
-  getData((void**)&obfuscated.buf, &obfuscated.length);
+void VncAuthPasswdParameter::getVncAuthPasswd(std::string *password, std::string *readOnlyPassword) {
+  std::vector<uint8_t> obfuscated, obfuscatedReadOnly;
+  obfuscated = getData();
 
-  if (obfuscated.length == 0) {
+  if (obfuscated.size() == 0) {
     if (passwdFile) {
-      CharArray fname(passwdFile->getData());
-      if (!fname.buf[0]) {
-        vlog.info("neither %s nor %s params set", getName(), passwdFile->getName());
+      const char *fname = *passwdFile;
+      if (!fname[0]) {
+        vlog.info("Neither %s nor %s params set", getName(), passwdFile->getName());
         return;
       }
 
-      FILE* fp = fopen(fname.buf, "r");
+      FILE* fp = fopen(fname, "r");
       if (!fp) {
-        vlog.error("opening password file '%s' failed",fname.buf);
+        vlog.error("Opening password file '%s' failed", fname);
         return;
       }
 
-      vlog.debug("reading password file");
-      obfuscated.buf = new char[8];
-      obfuscated.length = fread(obfuscated.buf, 1, 8, fp);
-      obfuscatedReadOnly.buf = new char[8];
-      obfuscatedReadOnly.length = fread(obfuscatedReadOnly.buf, 1, 8, fp);
+      vlog.debug("Reading password file");
+      obfuscated.resize(8);
+      obfuscated.resize(fread(obfuscated.data(), 1, 8, fp));
+      obfuscatedReadOnly.resize(8);
+      obfuscatedReadOnly.resize(fread(obfuscatedReadOnly.data(), 1, 8, fp));
       fclose(fp);
     } else {
       vlog.info("%s parameter not set", getName());
     }
   }
 
+  assert(password != nullptr);
+  assert(readOnlyPassword != nullptr);
+
   try {
-    PlainPasswd plainPassword(obfuscated);
-    password->replaceBuf(plainPassword.takeBuf());
-    PlainPasswd plainPasswordReadOnly(obfuscatedReadOnly);
-    readOnlyPassword->replaceBuf(plainPasswordReadOnly.takeBuf());
+    *password = deobfuscate(obfuscated.data(), obfuscated.size());
+    *readOnlyPassword = deobfuscate(obfuscatedReadOnly.data(), obfuscatedReadOnly.size());
   } catch (...) {
   }
 }

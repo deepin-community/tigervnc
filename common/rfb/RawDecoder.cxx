@@ -16,6 +16,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <assert.h>
 
 #include <rdr/OutStream.h>
@@ -42,7 +46,7 @@ bool RawDecoder::readRect(const Rect& r, rdr::InStream* is,
   return true;
 }
 
-void RawDecoder::decodeRect(const Rect& r, const void* buffer,
+void RawDecoder::decodeRect(const Rect& r, const uint8_t* buffer,
                             size_t buflen, const ServerParams& server,
                             ModifiablePixelBuffer* pb)
 {

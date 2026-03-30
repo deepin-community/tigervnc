@@ -27,12 +27,14 @@
 #include <unistd.h>
 #endif
 
+#include <rdr/Exception.h>
+
 #include <rfb/CMsgWriter.h>
 #include <rfb/CSecurity.h>
+#include <rfb/Exception.h>
 #include <rfb/Hostname.h>
 #include <rfb/LogWriter.h>
 #include <rfb/Security.h>
-#include <rfb/util.h>
 #include <rfb/screenTypes.h>
 #include <rfb/fenceTypes.h>
 #include <rfb/Timer.h>
@@ -56,9 +58,7 @@
 #include "win32.h"
 #endif
 
-using namespace rdr;
 using namespace rfb;
-using namespace std;
 
 static rfb::LogWriter vlog("CConn");
 
@@ -75,9 +75,8 @@ static const PixelFormat mediumColourPF(8, 8, false, true,
 // Time new bandwidth estimates are weighted against (in ms)
 static const unsigned bpsEstimateWindow = 1000;
 
-CConn::CConn(const char* vncServerName, network::Socket* socket=NULL)
-  : serverHost(0), serverPort(0), desktop(NULL),
-    updateCount(0), pixelCount(0),
+CConn::CConn(const char* vncServerName, network::Socket* socket=nullptr)
+  : serverPort(0), desktop(nullptr), updateCount(0), pixelCount(0),
     lastServerEncoding((unsigned int)-1), bpsEstimate(20000000)
 {
   setShared(::shared);
@@ -86,7 +85,7 @@ CConn::CConn(const char* vncServerName, network::Socket* socket=NULL)
   supportsLocalCursor = true;
   supportsCursorPosition = true;
   supportsDesktopResize = true;
-  supportsLEDState = false;
+  supportsLEDState = true;
 
   if (customCompressLevel)
     setCompressLevel(::compressLevel);
@@ -94,32 +93,33 @@ CConn::CConn(const char* vncServerName, network::Socket* socket=NULL)
   if (!noJpeg)
     setQualityLevel(::qualityLevel);
 
-  if(sock == NULL) {
+  if(sock == nullptr) {
     try {
 #ifndef WIN32
-      if (strchr(vncServerName, '/') != NULL) {
+      if (strchr(vncServerName, '/') != nullptr) {
         sock = new network::UnixSocket(vncServerName);
         serverHost = sock->getPeerAddress();
-        vlog.info(_("Connected to socket %s"), serverHost);
+        vlog.info(_("Connected to socket %s"), serverHost.c_str());
       } else
 #endif
       {
         getHostAndPort(vncServerName, &serverHost, &serverPort);
 
-        sock = new network::TcpSocket(serverHost, serverPort);
-        vlog.info(_("Connected to host %s port %d"), serverHost, serverPort);
+        sock = new network::TcpSocket(serverHost.c_str(), serverPort);
+        vlog.info(_("Connected to host %s port %d"),
+                  serverHost.c_str(), serverPort);
       }
-    } catch (rdr::Exception& e) {
-      vlog.error("%s", e.str());
+    } catch (std::exception& e) {
+      vlog.error("%s", e.what());
       abort_connection(_("Failed to connect to \"%s\":\n\n%s"),
-                       vncServerName, e.str());
+                       vncServerName, e.what());
       return;
     }
   }
 
   Fl::add_fd(sock->getFd(), FL_READ | FL_EXCEPT, socketEvent, this);
 
-  setServerName(serverHost);
+  setServerName(serverHost.c_str());
   setStreams(&sock->inStream(), &sock->outStream());
 
   initialiseProtocol();
@@ -137,78 +137,58 @@ CConn::~CConn()
   if (desktop)
     delete desktop;
 
-  delete [] serverHost;
   if (sock)
     Fl::remove_fd(sock->getFd());
   delete sock;
 }
 
-const char *CConn::connectionInfo()
+std::string CConn::connectionInfo()
 {
-  static char infoText[1024] = "";
+  std::string infoText;
 
-  char scratch[100];
   char pfStr[100];
 
-  // Crude way of avoiding constant overflow checks
-  assert((sizeof(scratch) + 1) * 10 < sizeof(infoText));
+  infoText += format(_("Desktop name: %.80s"), server.name());
+  infoText += "\n";
 
-  infoText[0] = '\0';
+  infoText += format(_("Host: %.80s port: %d"),
+                     serverHost.c_str(), serverPort);
+  infoText += "\n";
 
-  snprintf(scratch, sizeof(scratch),
-           _("Desktop name: %.80s"), server.name());
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
-
-  snprintf(scratch, sizeof(scratch),
-           _("Host: %.80s port: %d"), serverHost, serverPort);
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
-
-  snprintf(scratch, sizeof(scratch),
-           _("Size: %d x %d"), server.width(), server.height());
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Size: %d x %d"),
+                     server.width(), server.height());
+  infoText += "\n";
 
   // TRANSLATORS: Will be filled in with a string describing the
   // protocol pixel format in a fairly language neutral way
   server.pf().print(pfStr, 100);
-  snprintf(scratch, sizeof(scratch),
-           _("Pixel format: %s"), pfStr);
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Pixel format: %s"), pfStr);
+  infoText += "\n";
 
   // TRANSLATORS: Similar to the earlier "Pixel format" string
   serverPF.print(pfStr, 100);
-  snprintf(scratch, sizeof(scratch),
-           _("(server default %s)"), pfStr);
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("(server default %s)"), pfStr);
+  infoText += "\n";
 
-  snprintf(scratch, sizeof(scratch),
-           _("Requested encoding: %s"), encodingName(getPreferredEncoding()));
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Requested encoding: %s"),
+                     encodingName(getPreferredEncoding()));
+  infoText += "\n";
 
-  snprintf(scratch, sizeof(scratch),
-           _("Last used encoding: %s"), encodingName(lastServerEncoding));
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Last used encoding: %s"),
+                     encodingName(lastServerEncoding));
+  infoText += "\n";
 
-  snprintf(scratch, sizeof(scratch),
-           _("Line speed estimate: %d kbit/s"), (int)(bpsEstimate/1000));
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Line speed estimate: %d kbit/s"),
+                     (int)(bpsEstimate / 1000));
+  infoText += "\n";
 
-  snprintf(scratch, sizeof(scratch),
-           _("Protocol version: %d.%d"), server.majorVersion, server.minorVersion);
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Protocol version: %d.%d"),
+                     server.majorVersion, server.minorVersion);
+  infoText += "\n";
 
-  snprintf(scratch, sizeof(scratch),
-           _("Security method: %s"), secTypeName(csecurity->getType()));
-  strcat(infoText, scratch);
-  strcat(infoText, "\n");
+  infoText += format(_("Security method: %s"),
+                     secTypeName(csecurity->getType()));
+  infoText += "\n";
 
   return infoText;
 }
@@ -238,16 +218,16 @@ void CConn::socketEvent(FL_SOCKET fd, void *data)
   cc = (CConn*)data;
 
   // I don't think processMsg() is recursion safe, so add this check
-  if (recursing)
-    return;
+  assert(!recursing);
 
   recursing = true;
+  Fl::remove_fd(fd);
 
   try {
     // We might have been called to flush unwritten socket data
     cc->sock->outStream().flush();
 
-    cc->sock->outStream().cork(true);
+    cc->getOutStream()->cork(true);
 
     // processMsg() only processes one message, so we need to loop
     // until the buffers are empty or things will stall.
@@ -255,18 +235,17 @@ void CConn::socketEvent(FL_SOCKET fd, void *data)
 
       // Make sure that the FLTK handling and the timers gets some CPU
       // time in case of back to back messages
-       Fl::check();
-       Timer::checkTimeouts();
+      Fl::check();
+      Timer::checkTimeouts();
 
-       // Also check if we need to stop reading and terminate
-       if (should_disconnect())
-         break;
+      // Also check if we need to stop reading and terminate
+      if (should_disconnect())
+        break;
     }
 
-    cc->sock->outStream().cork(false);
-    cc->sock->outStream().flush();
-  } catch (rdr::EndOfStream& e) {
-    vlog.info("%s", e.str());
+    cc->getOutStream()->cork(false);
+  } catch (rdr::end_of_stream& e) {
+    vlog.info("%s", e.what());
     if (!cc->desktop) {
       vlog.error(_("The connection was dropped by the server before "
                    "the session could be established."));
@@ -275,10 +254,17 @@ void CConn::socketEvent(FL_SOCKET fd, void *data)
     } else {
       disconnect();
     }
-  } catch (rdr::Exception& e) {
-    vlog.error("%s", e.str());
-    abort_connection(_("An unexpected error occurred when communicating "
-                     "with the server:\n\n%s"), e.str());
+  } catch (rfb::auth_cancelled& e) {
+    vlog.info("%s", e.what());
+    disconnect();
+  } catch (rfb::auth_error& e) {
+    cc->resetPassword();
+    vlog.error(_("Authentication failed: %s"), e.what());
+    abort_connection(_("Failed to authenticate with the server. Reason "
+                       "given by the server:\n\n%s"), e.what());
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+    abort_connection_with_unexpected_error(e);
   }
 
   when = FL_READ | FL_EXCEPT;
@@ -286,11 +272,27 @@ void CConn::socketEvent(FL_SOCKET fd, void *data)
     when |= FL_WRITE;
 
   Fl::add_fd(fd, when, socketEvent, data);
-
   recursing = false;
 }
 
+void CConn::resetPassword()
+{
+    dlg.resetPassword();
+}
+
 ////////////////////// CConnection callback methods //////////////////////
+
+bool CConn::showMsgBox(MsgBoxFlags flags, const char *title,
+                       const char *text)
+{
+    return dlg.showMsgBox(flags, title, text);
+}
+
+void CConn::getUserPasswd(bool secure, std::string *user,
+                          std::string *password)
+{
+    dlg.getUserPasswd(secure, user, password);
+}
 
 // initDone() is called when the serverInit message has been received.  At
 // this point we create the desktop window and display it.  We also tell the
@@ -353,7 +355,7 @@ void CConn::framebufferUpdateStart()
   CConnection::framebufferUpdateStart();
 
   // For bandwidth estimate
-  gettimeofday(&updateStartTime, NULL);
+  gettimeofday(&updateStartTime, nullptr);
   updateStartPos = sock->inStream().pos();
 
   // Update the screen prematurely for very slow updates
@@ -374,7 +376,7 @@ void CConn::framebufferUpdateEnd()
   updateCount++;
 
   // Calculate bandwidth everything managed to maintain during this update
-  gettimeofday(&now, NULL);
+  gettimeofday(&now, nullptr);
   elapsed = (now.tv_sec - updateStartTime.tv_sec) * 1000000;
   elapsed += now.tv_usec - updateStartTime.tv_usec;
   if (elapsed == 0)
@@ -400,7 +402,8 @@ void CConn::framebufferUpdateEnd()
 
 // The rest of the callbacks are fairly self-explanatory...
 
-void CConn::setColourMapEntries(int firstColour, int nColours, rdr::U16* rgbs)
+void CConn::setColourMapEntries(int /*firstColour*/, int /*nColours*/,
+                                uint16_t* /*rgbs*/)
 {
   vlog.error(_("Invalid SetColourMapEntries from server!"));
 }
@@ -426,7 +429,7 @@ bool CConn::dataRect(const Rect& r, int encoding)
 }
 
 void CConn::setCursor(int width, int height, const Point& hotspot,
-                      const rdr::U8* data)
+                      const uint8_t* data)
 {
   desktop->setCursor(width, height, hotspot, data);
 }
@@ -436,7 +439,7 @@ void CConn::setCursorPos(const Point& pos)
   desktop->setCursorPos(pos);
 }
 
-void CConn::fence(rdr::U32 flags, unsigned len, const char data[])
+void CConn::fence(uint32_t flags, unsigned len, const uint8_t data[])
 {
   CMsgHandler::fence(flags, len, data);
 

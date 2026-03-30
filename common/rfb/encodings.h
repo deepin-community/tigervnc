@@ -28,11 +28,15 @@ namespace rfb {
   const int encodingHextile = 5;
   const int encodingTight = 7;
   const int encodingZRLE = 16;
+#ifdef HAVE_H264
+  const int encodingH264 = 50;
+#endif
 
   const int encodingMax = 255;
 
   const int pseudoEncodingXCursor = -240;
   const int pseudoEncodingCursor = -239;
+  const int pseudoEncodingExtendedMouseButtons = -316;
   const int pseudoEncodingDesktopSize = -223;
   const int pseudoEncodingLEDState = -261;
   const int pseudoEncodingExtendedDesktopSize = -308;
