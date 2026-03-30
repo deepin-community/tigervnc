@@ -17,9 +17,16 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
  * USA.
  */
-#include <rfb/Exception.h>
+
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#include <stdexcept>
+
 #include <rfb/ledStates.h>
 #include <rfb/ServerParams.h>
+#include <rfb/util.h>
 
 using namespace rfb;
 
@@ -27,13 +34,13 @@ ServerParams::ServerParams()
   : majorVersion(0), minorVersion(0),
     supportsQEMUKeyEvent(false),
     supportsSetDesktopSize(false), supportsFence(false),
-    supportsContinuousUpdates(false),
-    width_(0), height_(0), name_(0),
+    supportsContinuousUpdates(false), supportsExtendedMouseButtons(false),
+    width_(0), height_(0),
     ledState_(ledUnknown)
 {
   setName("");
 
-  cursor_ = new Cursor(0, 0, Point(), NULL);
+  cursor_ = new Cursor(0, 0, Point(), nullptr);
 
   clipFlags = 0;
   memset(clipSizes, 0, sizeof(clipSizes));
@@ -41,7 +48,6 @@ ServerParams::ServerParams()
 
 ServerParams::~ServerParams()
 {
-  delete [] name_;
   delete cursor_;
 }
 
@@ -55,7 +61,7 @@ void ServerParams::setDimensions(int width, int height)
 void ServerParams::setDimensions(int width, int height, const ScreenSet& layout)
 {
   if (!layout.validate(width, height))
-    throw Exception("Attempted to configure an invalid screen layout");
+    throw std::invalid_argument("Attempted to configure an invalid screen layout");
 
   width_ = width;
   height_ = height;
@@ -67,13 +73,12 @@ void ServerParams::setPF(const PixelFormat& pf)
   pf_ = pf;
 
   if (pf.bpp != 8 && pf.bpp != 16 && pf.bpp != 32)
-    throw Exception("setPF: not 8, 16 or 32 bpp?");
+    throw std::invalid_argument("setPF: Not 8, 16 or 32 bpp?");
 }
 
 void ServerParams::setName(const char* name)
 {
-  delete [] name_;
-  name_ = strDup(name);
+  name_ = name;
 }
 
 void ServerParams::setCursor(const Cursor& other)
@@ -87,7 +92,7 @@ void ServerParams::setLEDState(unsigned int state)
   ledState_ = state;
 }
 
-rdr::U32 ServerParams::clipboardSize(unsigned int format) const
+uint32_t ServerParams::clipboardSize(unsigned int format) const
 {
   int i;
 
@@ -96,10 +101,10 @@ rdr::U32 ServerParams::clipboardSize(unsigned int format) const
       return clipSizes[i];
   }
 
-  throw Exception("Invalid clipboard format 0x%x", format);
+  throw std::invalid_argument(rfb::format("Invalid clipboard format 0x%x", format));
 }
 
-void ServerParams::setClipboardCaps(rdr::U32 flags, const rdr::U32* lengths)
+void ServerParams::setClipboardCaps(uint32_t flags, const uint32_t* lengths)
 {
   int i, num;
 

@@ -1,9 +1,13 @@
+Description: Added missing CMAKE_INSTALL_FULL_BINDIR define
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: no
+
 Index: pkg-tigervnc/config.h.in
 ===================================================================
 --- pkg-tigervnc.orig/config.h.in
 +++ pkg-tigervnc/config.h.in
-@@ -5,6 +5,7 @@
- #cmakedefine HAVE_ACTIVE_DESKTOP_L
+@@ -3,6 +3,7 @@
+ 
  #cmakedefine ENABLE_NLS 1
  
 +#cmakedefine CMAKE_INSTALL_FULL_BINDIR "@CMAKE_INSTALL_FULL_BINDIR@"

@@ -83,8 +83,8 @@ public class TcpSocket extends Socket {
       Selector selector = Selector.open();
       SelectionKey connect_key =
         sock.socket().getChannel().register(selector, SelectionKey.OP_CONNECT);
-      // Try for the connection for 250ms
-      while (selector.select(250) > 0) {
+      // Try for the connection for 3000ms
+      while (selector.select(3000) > 0) {
         while (!result) {
 
           Set keys = selector.selectedKeys();
@@ -185,7 +185,7 @@ public class TcpSocket extends Socket {
     try {
       sock.channel.socket().setTcpNoDelay(!enable);
     } catch(java.net.SocketException e) {
-      vlog.error("unable to setsockopt TCP_NODELAY: "+e.getMessage());
+      vlog.error("Unable to setsockopt TCP_NODELAY: "+e.getMessage());
       return false;
     }
     return true;

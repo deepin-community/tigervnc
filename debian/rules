@@ -15,11 +15,12 @@ export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 
 # Normal situation
 #VNC_PATCH = $(CURDIR)/unix/xserver120.patch
+VNC_PATCH = $(CURDIR)/unix/xserver21.patch
 # However in this case we do not have this file from upstream so we use a
 # debian specific copy instead.
-VNC_PATCH = $(CURDIR)/debian/xserver121.patch
+#VNC_PATCH = $(CURDIR)/debian/xserver121.patch
 
-VNC_LIBTOOL_PATCH = $(CURDIR)/contrib/packages/deb/ubuntu-xenial/debian/xorg-source-patches/debian_libtool.patch
+VNC_LIBTOOL_PATCH = $(CURDIR)/contrib/packages/deb/ubuntu-jammy/debian/xorg-source-patches/debian_libtool.patch
 
 include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/buildflags.mk
@@ -57,8 +58,9 @@ DEB_CMAKE_EXTRA_FLAGS	:= -DCMAKE_LIBRARY_PATH=$(DEB_HOST_MULTIARCH)
 
 #DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_LIBWRAP:BOOL=ON
 DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_NLS:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_NETTLE:BOOL=ON
 DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_GNUTLS:BOOL=ON
-DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_PAM:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_H264:BOOL=ON
 #DEB_CMAKE_EXTRA_FLAGS	+= -DBUILD_JAVA=1
 DEB_CMAKE_EXTRA_FLAGS   += -DBUILD_TIMESTAMP="$(BUILD_TIMESTAMP)"
 
@@ -86,8 +88,6 @@ XORG_DEBIAN_CONFIGURE_FLAGS := \
 		--enable-xephyr \
 		--enable-xorg \
 		--enable-dri \
-		--enable-dri2 \
-		--enable-dri3 \
 		--enable-xmir \
 	    , $(xserver_confflags) \
 	)
@@ -101,9 +101,7 @@ DEB_CONFIGURE_EXTRA_FLAGS := \
 	--disable-xnest \
 	--disable-xephyr \
 	--disable-xorg \
-	--disable-dri \
-	--disable-dri2 \
-	--disable-dri3
+	--disable-dri
 
 # Don't use libunwind for armel, armhf, and arm64 as this library is buggy
 # (bug #923962) on those architectures.

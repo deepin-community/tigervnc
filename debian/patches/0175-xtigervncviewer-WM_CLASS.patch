@@ -1,11 +1,12 @@
 Description: Update WM_CLASS to correspond to the one given in the xtigervncviewer.desktop file
 Author: Joachim Falk
+Forwarded: no
 
 Index: pkg-tigervnc/vncviewer/vncviewer.cxx
 ===================================================================
 --- pkg-tigervnc.orig/vncviewer/vncviewer.cxx
 +++ pkg-tigervnc/vncviewer/vncviewer.cxx
-@@ -333,7 +333,7 @@ static void init_fltk()
+@@ -325,7 +325,7 @@ static void init_fltk()
  
    // Proper Gnome Shell integration requires that we set a sensible
    // WM_CLASS for the window.
@@ -19,8 +20,8 @@ Index: pkg-tigervnc/vncviewer/vncviewer.desktop.in.in
 --- pkg-tigervnc.orig/vncviewer/vncviewer.desktop.in.in
 +++ pkg-tigervnc/vncviewer/vncviewer.desktop.in.in
 @@ -2,9 +2,10 @@
- Name=TigerVNC Viewer
- GenericName=Remote Desktop Viewer
+ Name=TigerVNC viewer
+ GenericName=Remote desktop viewer
  Comment=Connect to VNC server and display remote desktop
 -Exec=@CMAKE_INSTALL_FULL_BINDIR@/vncviewer
 +Keywords=remote desktop;vnc;
@@ -28,6 +29,6 @@ Index: pkg-tigervnc/vncviewer/vncviewer.desktop.in.in
  Icon=tigervnc
  Terminal=false
  Type=Application
--StartupWMClass=TigerVNC Viewer: Connection Details
+-StartupWMClass=vncviewer
 +StartupWMClass=TigerVNC Viewer
  Categories=Network;RemoteAccess;

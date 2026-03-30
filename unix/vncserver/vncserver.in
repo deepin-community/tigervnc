@@ -35,7 +35,15 @@
 # your site
 #
 
-$vncUserDir = "$ENV{HOME}/.vnc";
+$vncUserDir = rindex("$ENV{XDG_CONFIG_HOME}", "/", 0) == 0
+  ? "$ENV{XDG_CONFIG_HOME}/tigervnc"
+  : "$ENV{HOME}/.config/tigervnc";
+$vncLegacyDir = "$ENV{HOME}/.vnc";
+if (!stat($vncUserDir) && stat($vncLegacyDir)) {
+  warn "~/.vnc is deprecated, please consult 'man vncsession' for paths to migrate to.";
+  $vncUserDir = $vncLegacyDir;
+}
+
 $vncUserConfig = "$vncUserDir/config";
 
 $vncSystemConfigDir = "@CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc";
@@ -150,8 +158,10 @@ if ($config{'password'} ||
 
 if ((!$securityTypeArgSpecified || $vncAuthEnabled) && !$passwordArgSpecified) {
     ($z,$z,$mode) = stat("$vncUserDir/passwd");
-    if (!(-e "$vncUserDir/passwd") || ($mode & 077)) {
+    if (! -e "$vncUserDir/passwd") {
         die "VNC authentication enabled, but no password file created.\n";
+    } elsif ($mode & 077) {
+        die "$vncUserDir/passwd must NOT be accessible by others. Set permission to 0600.\n";
     }
 }
 
@@ -198,7 +208,7 @@ $ENV{DESKTOP_SESSION} = $sessionname;
 $ENV{XDG_SESSION_DESKTOP} = $sessionname;
 
 if ($session{'DesktopNames'}) {
-    $ENV{XDG_DESKTOP_NAMES} = $session{'DesktopNames'} =~ s/;/:/gr;
+    $ENV{XDG_CURRENT_DESKTOP} = $session{'DesktopNames'} =~ s/;/:/gr;
 }
 
 # Make an X server cookie and set up the Xauthority file
@@ -228,7 +238,7 @@ close(XAUTH);
 
 $ENV{XAUTHORITY} = $xauthorityFile;
 
-# Now start the X VNC Server
+# Now start the X VNC server
 
 @cmd = ("xinit");
 
@@ -278,7 +288,7 @@ sub LoadConfig {
     if (open(IN, $configFile)) {
       while (<IN>) {
         next if /^#/;
-        if (my ($k, $v) = /^\s*(\w+)\s*=\s*(.+)$/) {
+        if (my ($k, $v) = /^\s*(\w+)\s*=\s*(.*)$/) {
           $k = lc($k); # must normalize key case
           if ($warnoverride && $config{$k}) {
             print("Warning: $configFile is overriding previously defined '$k' to be '$v'\n");

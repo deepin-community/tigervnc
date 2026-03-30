@@ -17,6 +17,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <string.h>
 #include <FL/Fl.H>
 
@@ -62,7 +66,7 @@ const MenuKeySymbol* getMenuKeySymbols()
   return menuSymbols;
 }
 
-void getMenuKey(int *fltkcode, int *keycode, rdr::U32 *keysym)
+void getMenuKey(int *fltkcode, int *keycode, uint32_t *keysym)
 {
   const char *menuKeyStr;
 

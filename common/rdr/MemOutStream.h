@@ -23,7 +23,6 @@
 #ifndef __RDR_MEMOUTSTREAM_H__
 #define __RDR_MEMOUTSTREAM_H__
 
-#include <rdr/Exception.h>
 #include <rdr/OutStream.h>
 
 namespace rdr {
@@ -33,7 +32,7 @@ namespace rdr {
   public:
 
     MemOutStream(int len=1024) {
-      start = ptr = new U8[len];
+      start = ptr = new uint8_t[len];
       end = start + len;
     }
 
@@ -41,29 +40,29 @@ namespace rdr {
       delete [] start;
     }
 
-    size_t length() { return ptr - start; }
+    size_t length() override { return ptr - start; }
     void clear() { ptr = start; };
     void clearAndZero() { memset(start, 0, ptr-start); clear(); }
     void reposition(size_t pos) { ptr = start + pos; }
 
     // data() returns a pointer to the buffer.
 
-    const void* data() { return (const void*)start; }
+    const uint8_t* data() { return start; }
 
   protected:
 
     // overrun() either doubles the buffer or adds enough space for
     // needed bytes.
 
-    virtual void overrun(size_t needed) {
+    void overrun(size_t needed) override {
       size_t len = ptr - start + needed;
       if (len < (size_t)(end - start) * 2)
         len = (end - start) * 2;
 
       if (len < (size_t)(end - start))
-        throw Exception("Overflow in MemOutStream::overrun()");
+        throw std::out_of_range("Overflow in MemOutStream::overrun()");
 
-      U8* newStart = new U8[len];
+      uint8_t* newStart = new uint8_t[len];
       memcpy(newStart, start, ptr - start);
       ptr = newStart + (ptr - start);
       delete [] start;
@@ -71,7 +70,7 @@ namespace rdr {
       end = newStart + len;
     }
 
-    U8* start;
+    uint8_t* start;
   };
 
 }

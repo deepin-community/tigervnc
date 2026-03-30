@@ -28,7 +28,6 @@
 #ifndef __TXWINDOW_H__
 #define __TXWINDOW_H__
 
-#include <rdr/types.h>
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -66,7 +65,8 @@ public:
   // background (currently grey).  It is mapped by default if it has a parent.
   // If no parent is specified its parent is the root window and it will remain
   // unmapped.
-  TXWindow(Display* dpy_, int width=1, int height=1, TXWindow* parent_=0,
+  TXWindow(Display* dpy_, int width=1, int height=1,
+           TXWindow* parent_=nullptr,
            int borderWidth=0);
   virtual ~TXWindow();
 
@@ -74,8 +74,9 @@ public:
   // window-manager-related properties are set on the window.  The given
   // TXDeleteWindowCallback is notified when the window is "deleted" (cloesd)
   // by the user.
-  void toplevel(const char* name, TXDeleteWindowCallback* dwc=0,
-                int argc=0, char** argv=0, const char* windowClass=0,
+  void toplevel(const char* name, TXDeleteWindowCallback* dwc=nullptr,
+                int argc=0, char** argv=nullptr,
+                const char* windowClass=nullptr,
                 bool iconic=false);
 
   // setMaxSize() tells the window manager the maximum size to allow a
@@ -142,19 +143,22 @@ public:
 
   // takeFocus() is called when the window has received keyboard focus from the
   // window manager.
-  virtual void takeFocus(Time time) {}
+  virtual void takeFocus(Time /*time*/) {}
 
   // selectionNotify() is called when the selection owner has replied to a
   // request for information about a selection from the selection owner.
-  virtual void selectionNotify(XSelectionEvent* ev, Atom type, int format,
-                               int nitems, void* data) {}
+  virtual void selectionNotify(XSelectionEvent* /*ev*/, Atom /*type*/,
+                               int /*format*/, int /*nitems*/,
+                               void* /*data*/) {}
 
   // selectionRequest() is called when this window is the selection owner and
   // another X client has requested the selection.  It should set the given
   // property on the given window to the value of the given selection,
   // returning true if successful, false otherwise.
-  virtual bool selectionRequest(Window requestor,
-                                Atom selection, Atom property) { return false;}
+  virtual bool selectionRequest(Window /*requestor*/,
+                                Atom /*selection*/,
+                                Atom /*target*/,
+                                Atom /*property*/) { return false;}
 
   // Static methods
 
@@ -180,7 +184,7 @@ public:
 
   // strEmptyToNull() returns the string it's given but turns an empty string
   // into null, which can be useful for passing rfb parameters to Xlib calls.
-  static char* strEmptyToNull(char* s) { return s && s[0] ? s : 0; }
+  static char* strEmptyToNull(char* s) { return s && s[0] ? s : nullptr; }
 
   // The following are default values for various things.
   static unsigned long black, white;
@@ -223,6 +227,6 @@ private:
 
 extern Atom wmProtocols, wmDeleteWindow, wmTakeFocus;
 extern Atom xaTIMESTAMP, xaTARGETS, xaSELECTION_TIME, xaSELECTION_STRING;
-extern Atom xaCLIPBOARD;
+extern Atom xaCLIPBOARD, xaUTF8_STRING, xaINCR;
 
 #endif

@@ -17,10 +17,12 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <rfb/CConnection.h>
 #include <rfb/CSecurityPlain.h>
-#include <rfb/UserPasswdGetter.h>
-#include <rfb/util.h>
 
 #include <rdr/OutStream.h>
 
@@ -30,16 +32,16 @@ bool CSecurityPlain::processMsg()
 {
    rdr::OutStream* os = cc->getOutStream();
 
-  CharArray username;
-  CharArray password;
+  std::string username;
+  std::string password;
 
-  (CSecurity::upg)->getUserPasswd(cc->isSecure(), &username.buf, &password.buf);
+  cc->getUserPasswd(cc->isSecure(), &username, &password);
 
   // Return the response to the server
-  os->writeU32(strlen(username.buf));
-  os->writeU32(strlen(password.buf));
-  os->writeBytes(username.buf,strlen(username.buf));
-  os->writeBytes(password.buf,strlen(password.buf));
+  os->writeU32(username.size());
+  os->writeU32(password.size());
+  os->writeBytes((const uint8_t*)username.data(), username.size());
+  os->writeBytes((const uint8_t*)password.data(), password.size());
   os->flush();
   return true;
 }

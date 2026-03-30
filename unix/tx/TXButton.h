@@ -41,14 +41,15 @@ public:
 class TXButton : public TXWindow, public TXEventHandler {
 public:
 
-  TXButton(Display* dpy_, const char* text_, TXButtonCallback* cb_=0,
-           TXWindow* parent_=0, int w=1, int h=1)
+  TXButton(Display* dpy_, const char* text_,
+           TXButtonCallback* cb_=nullptr,
+           TXWindow* parent_=nullptr, int w=1, int h=1)
     : TXWindow(dpy_, w, h, parent_), cb(cb_), down(false),
       disabled_(false)
   {
     setEventHandler(this);
     setText(text_);
-    gc = XCreateGC(dpy, win(), 0, 0);
+    gc = XCreateGC(dpy, win(), 0, nullptr);
     XSetFont(dpy, gc, defaultFont);
     addEventMask(ExposureMask | ButtonPressMask | ButtonReleaseMask);
   }
@@ -59,8 +60,8 @@ public:
 
   // setText() changes the text in the button.
   void setText(const char* text_) {
-    text.buf = rfb::strDup(text_);
-    int textWidth = XTextWidth(defaultFS, text.buf, strlen(text.buf));
+    text = text_;
+    int textWidth = XTextWidth(defaultFS, text.data(), text.size());
     int textHeight = (defaultFS->ascent + defaultFS->descent);
     int newWidth = __rfbmax(width(), textWidth + xPad*2 + bevel*2);
     int newHeight = __rfbmax(height(), textHeight + yPad*2 + bevel*2);
@@ -77,7 +78,7 @@ public:
 private:
 
   void paint() {
-    int tw = XTextWidth(defaultFS, text.buf, strlen(text.buf));
+    int tw = XTextWidth(defaultFS, text.data(), text.size());
     int startx = (width() - tw) / 2;
     int starty = (height() + defaultFS->ascent - defaultFS->descent) / 2;
     if (down || disabled_) {
@@ -88,10 +89,10 @@ private:
     }
 
     XSetForeground(dpy, gc, disabled_ ? disabledFg : defaultFg);
-    XDrawString(dpy, win(), gc, startx, starty, text.buf, strlen(text.buf));
+    XDrawString(dpy, win(), gc, startx, starty, text.data(), text.size());
   }
 
-  virtual void handleEvent(TXWindow* w, XEvent* ev) {
+  void handleEvent(TXWindow* /*w*/, XEvent* ev) override {
     switch (ev->type) {
     case Expose:
       paint();
@@ -115,7 +116,7 @@ private:
   }
 
   GC gc;
-  rfb::CharArray text;
+  std::string text;
   TXButtonCallback* cb;
   bool down;
   bool disabled_;

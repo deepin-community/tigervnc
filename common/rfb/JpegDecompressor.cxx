@@ -19,8 +19,12 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <rfb/JpegDecompressor.h>
-#include <rdr/Exception.h>
+#include <rfb/Exception.h>
 #include <rfb/Rect.h>
 #include <rfb/PixelFormat.h>
 
@@ -80,7 +84,7 @@ struct JPEG_SRC_MGR {
 };
 
 static void
-JpegNoOp(j_decompress_ptr dinfo)
+JpegNoOp(j_decompress_ptr /*dinfo*/)
 {
 }
 
@@ -116,7 +120,7 @@ JpegDecompressor::JpegDecompressor(void)
 
   if(setjmp(err->jmpBuffer)) {
     // this will execute if libjpeg has an error
-    throw rdr::Exception("%s", err->lastError);
+    throw std::runtime_error(err->lastError);
   }
 
   jpeg_create_decompress(dinfo);
@@ -146,23 +150,25 @@ JpegDecompressor::~JpegDecompressor(void)
   delete dinfo;
 }
 
-void JpegDecompressor::decompress(const rdr::U8 *jpegBuf, int jpegBufLen,
-  rdr::U8 *buf, int stride, const Rect& r, const PixelFormat& pf)
+void JpegDecompressor::decompress(const uint8_t *jpegBuf,
+                                  int jpegBufLen, uint8_t *buf,
+                                  volatile int stride,
+                                  const Rect& r, const PixelFormat& pf)
 {
   int w = r.width();
   int h = r.height();
   int pixelsize;
   int dstBufStride;
-  rdr::U8 *dstBuf = NULL;
-  bool dstBufIsTemp = false;
-  JSAMPROW *rowPointer = NULL;
+  uint8_t * volatile dstBuf = nullptr;
+  volatile bool dstBufIsTemp = false;
+  JSAMPROW * volatile rowPointer = nullptr;
 
   if(setjmp(err->jmpBuffer)) {
     // this will execute if libjpeg has an error
     jpeg_abort_decompress(dinfo);
     if (dstBufIsTemp && dstBuf) delete[] dstBuf;
     if (rowPointer) delete[] rowPointer;
-    throw rdr::Exception("%s", err->lastError);
+    throw std::runtime_error(err->lastError);
   }
 
   src->pub.next_input_byte = jpegBuf;
@@ -178,23 +184,23 @@ void JpegDecompressor::decompress(const rdr::U8 *jpegBuf, int jpegBufLen,
 #ifdef JCS_EXTENSIONS
   // Try to have libjpeg output directly to our native format
   // libjpeg can only handle some "standard" formats
-  if (pfRGBX.equal(pf))
+  if (pfRGBX == pf)
     dinfo->out_color_space = JCS_EXT_RGBX;
-  else if (pfBGRX.equal(pf))
+  else if (pfBGRX == pf)
     dinfo->out_color_space = JCS_EXT_BGRX;
-  else if (pfXRGB.equal(pf))
+  else if (pfXRGB == pf)
     dinfo->out_color_space = JCS_EXT_XRGB;
-  else if (pfXBGR.equal(pf))
+  else if (pfXBGR == pf)
     dinfo->out_color_space = JCS_EXT_XBGR;
 
   if (dinfo->out_color_space != JCS_RGB) {
-    dstBuf = (rdr::U8 *)buf;
+    dstBuf = (uint8_t *)buf;
     pixelsize = 4;
   }
 #endif
 
   if (dinfo->out_color_space == JCS_RGB) {
-    dstBuf = new rdr::U8[w * h * pixelsize];
+    dstBuf = new uint8_t[w * h * pixelsize];
     dstBufIsTemp = true;
     dstBufStride = w;
   }
@@ -211,7 +217,7 @@ void JpegDecompressor::decompress(const rdr::U8 *jpegBuf, int jpegBufLen,
     jpeg_abort_decompress(dinfo);
     if (dstBufIsTemp && dstBuf) delete[] dstBuf;
     if (rowPointer) delete[] rowPointer;
-    throw rdr::Exception("Tight Decoding: Wrong JPEG data received.\n");
+    throw protocol_error("Tight Decoding: Wrong JPEG data received.\n");
   }
 
   while (dinfo->output_scanline < dinfo->output_height) {
@@ -220,7 +226,7 @@ void JpegDecompressor::decompress(const rdr::U8 *jpegBuf, int jpegBufLen,
   }
 
   if (dinfo->out_color_space == JCS_RGB)
-    pf.bufferFromRGB((rdr::U8*)buf, dstBuf, w, stride, h);
+    pf.bufferFromRGB((uint8_t*)buf, dstBuf, w, stride, h);
 
   jpeg_finish_decompress(dinfo);
 

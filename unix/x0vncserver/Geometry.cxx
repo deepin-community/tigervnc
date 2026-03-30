@@ -20,6 +20,12 @@
 // Geometry.cxx
 //
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#include <string.h>
+
 #include <rfb/LogWriter.h>
 #include <x0vncserver/Geometry.h>
 
@@ -46,13 +52,11 @@ void Geometry::recalc(int fullWidth, int fullHeight)
   m_rect.setXYWH(0, 0, fullWidth, fullHeight);
 
   // Parse geometry specification and save the result in m_rect.
-  const char *param = m_geometryParam.getData();
+  const char *param = m_geometryParam;
   bool geometrySpecified = (strlen(param) > 0);
   if (geometrySpecified) {
     m_rect = parseString(param);
   }
-  delete[] param;               // don't forget to deallocate memory
-                                // allocated by StringParameter::getData()
   if (m_rect.is_empty()) {
     vlog.info("Desktop geometry is invalid");
     return;                     // further processing does not make sense
@@ -67,7 +71,7 @@ Rect Geometry::parseString(const char *arg) const
 {
   Rect result;                  // empty by default
 
-  if (arg != NULL && strlen(arg) > 0) {
+  if (arg != nullptr && strlen(arg) > 0) {
     int w, h;
     int x = 0, y = 0;
     char sign_x[2] = "+";

@@ -18,11 +18,14 @@
 
 // -=- Logger_syslog.cxx - Logger instance for a syslog
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 
-#include <rfb/util.h>
 #include <rfb/Logger_syslog.h>
 #include <rfb/LogWriter.h>
 
@@ -32,7 +35,7 @@ using namespace rfb;
 Logger_Syslog::Logger_Syslog(const char* loggerName)
   : Logger(loggerName)
 {
-  openlog(0, LOG_CONS | LOG_PID, LOG_USER);
+  openlog(nullptr, LOG_CONS | LOG_PID, LOG_USER);
 }
 
 Logger_Syslog::~Logger_Syslog()

@@ -21,7 +21,6 @@
 #include <config.h>
 #endif
 
-#include <rdr/Exception.h>
 #include <rfb/Security.h>
 #include <rfb/SSecurityNone.h>
 #include <rfb/SSecurityStack.h>
@@ -31,8 +30,10 @@
 #ifdef HAVE_GNUTLS
 #include <rfb/SSecurityTLS.h>
 #endif
+#ifdef HAVE_NETTLE
+#include <rfb/SSecurityRSAAES.h>
+#endif
 
-using namespace rdr;
 using namespace rfb;
 
 StringParameter SecurityServer::secTypes
@@ -41,15 +42,16 @@ StringParameter SecurityServer::secTypes
 #ifdef HAVE_GNUTLS
  ", TLSNone, TLSVnc, TLSPlain, X509None, X509Vnc, X509Plain"
 #endif
+#ifdef HAVE_NETTLE
+ ", RA2, RA2ne, RA2_256, RA2ne_256"
+#endif
  ")",
 #ifdef HAVE_GNUTLS
- "TLSVnc,VncAuth",
-#else
- "VncAuth",
+ "TLSVnc,"
 #endif
-ConfServer);
+ "VncAuth");
 
-SSecurity* SecurityServer::GetSSecurity(SConnection* sc, U32 secType)
+SSecurity* SecurityServer::GetSSecurity(SConnection* sc, uint32_t secType)
 {
   if (!IsSupported(secType))
     goto bail;
@@ -73,9 +75,19 @@ SSecurity* SecurityServer::GetSSecurity(SConnection* sc, U32 secType)
   case secTypeX509Plain:
     return new SSecurityStack(sc, secTypeX509Plain, new SSecurityTLS(sc, false), new SSecurityPlain(sc));
 #endif
+#ifdef HAVE_NETTLE
+  case secTypeRA2:
+    return new SSecurityRSAAES(sc, secTypeRA2, 128, true);
+  case secTypeRA2ne:
+    return new SSecurityRSAAES(sc, secTypeRA2ne, 128, false);
+  case secTypeRA256:
+    return new SSecurityRSAAES(sc, secTypeRA256, 256, true);
+  case secTypeRAne256:
+    return new SSecurityRSAAES(sc, secTypeRAne256, 256, false);
+#endif
   }
 
 bail:
-  throw Exception("Security type not supported");
+  throw std::invalid_argument("Security type not supported");
 }
 

@@ -1,3 +1,110 @@
+tigervnc (1.15.0+dfsg-2) unstable; urgency=medium
+
+  [ Stephan Springl ]
+  * Fix inetd mode of Xtigervnc. (closes: #1104740)
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Tue, 06 May 2025 00:30:59 +0200
+
+tigervnc (1.15.0+dfsg-1) unstable; urgency=medium
+
+  [ Joachim Falk ]
+  * Fresh upstream TigerVNC 1.15.0
+    - The native viewer and Unix servers now support the back and forward
+      mouse buttons
+    - The Unix servers can now handle any number of keys that are missing from
+      the server keyboard layout, rather than just a few
+    - x0tigervncserver now supports clipboard redirection
+    - The native viewer can remember the username and password when
+      reconnecting
+    - The native viewer can now show a standard arrow cursor, not just a dot
+      cursor, if the server cursor is blank
+    - tigervncpasswd can now check password complexity with pwquality
+  * Cache the VNC PasswordFile. In case the home directory becomes inaccessible,
+    e.g., due to an expired Kerberos ticket, the VNC server still needs the
+    content of the VNC password file. Otherwise, it is no longer possible to
+    log in using the security types VncAuth or X509Vnc. (closes: #1087925)
+  * Added missing dependencies to enable hardware-accelerated OpenGL and Vulkan
+    APIs. (closes: #1103038)
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Fri, 18 Apr 2025 11:01:55 +0200
+
+tigervnc (1.14.1+dfsg-1) unstable; urgency=medium
+
+  [ Joachim Falk ]
+  * Fresh upstream TigerVNC 1.14.1
+    - Xtigervnc now supports hardware accelerated OpenGL and Vulkan on
+      drivers that supports GBM (FOSS drivers and newer Nvidia drivers)
+    - The viewers and servers now follow the XDG Base Directory
+      Specification, like "~/.config", for storing files in the home
+      directory. Existing users will continue using the legacy "~/.vnc"
+      directory, but new users will get the XDG directories.
+    - The native viewer now supports Apple's Diffie-Hellman and UltraVNC's
+      MSLogonII authentication methods
+    - The Java viewer now supports RealVNC's RSA-AES authentication method
+    - The native viewer has received a mild refresh of the UI appearance
+    - Reverse connections can now be forced to be view-only
+    - The special "%u" marker can be specified for "PlainUsers" to
+      dynamically indicate the user running the server
+    - X0tigervnc now supports systemd socket activation
+  * TigerVNC configuration migrated to the ~/.config/tigervnc directory.
+    Thus, updated the wrapper scripts.
+  * TigerVNC configuration migrated to the ~/.config/tigervnc directory.
+    Thus, updated the Debian specific man pages.
+  * Wrapper scripts touch files in /tmp/tigervnc.* directory hourly to
+    keep them active in case of /tmp cleaner.
+  * Wrapper scripts tigervncserver and x0tigervncserver support the -pidfile
+    option, allowing to specify the PID file of the VNC server to be started.
+    (closes: #1025457)
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sun, 10 Nov 2024 18:57:25 +0100
+
+tigervnc (1.13.1+dfsg-3) unstable; urgency=medium
+
+  [ Joachim Falk ]
+  * Clarify status of CVE-2014-8240-849479.patch
+  * Disabled obsolete patches 0000-find-fltk-libs.patch and
+    0002-fix-linking.patch
+  * No longer change the wording of the X0tigervnc man page but still fix
+    option dashes to silence Lintian
+  * Updated install of /lib/systemd/system/tigervncserver@.service to
+    /usr/lib/systemd/system/tigervncserver@.service (closes: #1073756)
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sat, 13 Jul 2024 20:32:14 +0200
+
+tigervnc (1.13.1+dfsg-2) unstable; urgency=medium
+
+  [ Bjoern Kahl ]
+  * Handle the "-query" option of Xtigervnc correctly (LP: #2021434).
+  * Don't autokill Xtigervnc when the "-noxstartup" option is given.
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sat, 13 Jan 2024 10:29:13 +0100
+
+tigervnc (1.13.1+dfsg-1) unstable; urgency=medium
+
+  [ Joachim Falk ]
+  * Fresh upstream TigerVNC 1.13.1
+    - The servers and native viewer now support RealVNC's RSA-AES
+      authentication methods and encryption
+    - The native viewer is now translated to Romanian and Georgian
+    - The native viewer now supports PiKVM's H.264 encoding
+    - The display settings for the native viewer have been overhauled to make
+      them easier to understand
+    - The native viewer now supports adding exceptions for expired
+      certificates
+    - Lock key synchronization has been re-enabled in the native viewer after
+      being accidentally disabled in 1.11.0
+    - x0tigervncserver is a bit better at handling differing server and client
+      keyboard layout
+    - x0tigervncserver now correctly handles zaphod mode
+  * tigervncserver and x0tigervncserver error out if ~/.vnc/passwd is group or
+    world readable or writeable.
+  * tigervncserver and x0tigervncserver support RealVNC's RSA-AES
+    authentication methods, i.e., RA2, RA2ne, RA2_256, and RA2ne_256 security
+    types.
+  * Build with xorg-server-source >= 2:21.1.10 (closes: #1051921) (LP: #2048442).
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sat, 06 Jan 2024 20:53:33 +0100
+
 tigervnc (1.12.0+dfsg-8) unstable; urgency=medium
 
   [ Joachim Falk ]

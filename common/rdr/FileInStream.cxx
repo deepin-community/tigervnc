@@ -18,6 +18,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #include <errno.h>
 
 #include <rdr/Exception.h>
@@ -29,24 +33,24 @@ FileInStream::FileInStream(const char *fileName)
 {
   file = fopen(fileName, "rb");
   if (!file)
-    throw SystemException("fopen", errno);
+    throw posix_error("fopen", errno);
 }
 
 FileInStream::~FileInStream(void) {
   if (file) {
     fclose(file);
-    file = NULL;
+    file = nullptr;
   }
 }
 
-bool FileInStream::fillBuffer(size_t maxSize)
+bool FileInStream::fillBuffer()
 {
-  size_t n = fread((U8 *)end, 1, maxSize, file);
+  size_t n = fread((uint8_t*)end, 1, availSpace(), file);
   if (n == 0) {
     if (ferror(file))
-      throw SystemException("fread", errno);
+      throw posix_error("fread", errno);
     if (feof(file))
-      throw EndOfStream();
+      throw end_of_stream();
     return false;
   }
   end += n;

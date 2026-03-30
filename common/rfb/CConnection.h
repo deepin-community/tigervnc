@@ -24,17 +24,30 @@
 #ifndef __RFB_CCONNECTION_H__
 #define __RFB_CCONNECTION_H__
 
+#include <map>
+#include <string>
+
 #include <rfb/CMsgHandler.h>
 #include <rfb/DecodeManager.h>
 #include <rfb/SecurityClient.h>
-#include <rfb/util.h>
 
 namespace rfb {
 
   class CMsgReader;
   class CMsgWriter;
   class CSecurity;
-  class IdentityVerifier;
+
+  enum MsgBoxFlags{
+      M_OK = 0,
+      M_OKCANCEL = 1,
+      M_YESNO = 4,
+      M_ICONERROR = 0x10,
+      M_ICONQUESTION = 0x20,
+      M_ICONWARNING = 0x30,
+      M_ICONINFORMATION = 0x40,
+      M_DEFBUTTON1 = 0,
+      M_DEFBUTTON2 = 0x100
+  };
 
   class CConnection : public CMsgHandler {
   public:
@@ -48,7 +61,7 @@ namespace rfb {
     // which we are connected.  This might be the result of getPeerEndpoint on
     // a TcpSocket, for example, or a host specified by DNS name & port.
     // The serverName is used when verifying the Identity of a host (see RA2).
-    void setServerName(const char* name_) { serverName.replaceBuf(strDup(name_)); }
+    void setServerName(const char* name_);
 
     // setStreams() sets the streams to be used for the connection.  These must
     // be set before initialiseProtocol() and processMsg() are called.  The
@@ -74,16 +87,11 @@ namespace rfb {
     // there is data to read on the InStream.
     void initialiseProtocol();
 
-    // processMsg() should be called whenever there is either:
-    // - data available on the underlying network stream
-    //   In this case, processMsg may return without processing an RFB message,
-    //   if the available data does not result in an RFB message being ready
-    //   to handle. e.g. if data is encrypted.
-    // NB: This makes it safe to call processMsg() in response to select()
-    // - data available on the CConnection's current InStream
-    //   In this case, processMsg should always process the available RFB
-    //   message before returning.
-    // NB: In either case, you must have called initialiseProtocol() first.
+    // processMsg() should be called whenever there is data available on
+    // the CConnection's current InStream. It will process at most one
+    // RFB message before returning. If there was insufficient data,
+    // then it will return false and should be called again once more
+    // data is available.
     bool processMsg();
 
     // close() gracefully shuts down the connection to the server and
@@ -96,37 +104,46 @@ namespace rfb {
 
     // Note: These must be called by any deriving classes
 
-    virtual void setDesktopSize(int w, int h);
-    virtual void setExtendedDesktopSize(unsigned reason, unsigned result,
-                                        int w, int h,
-                                        const ScreenSet& layout);
+    void setDesktopSize(int w, int h) override;
+    void setExtendedDesktopSize(unsigned reason, unsigned result,
+                                int w, int h,
+                                const ScreenSet& layout) override;
 
-    virtual void endOfContinuousUpdates();
+    void endOfContinuousUpdates() override;
 
-    virtual void serverInit(int width, int height,
-                            const PixelFormat& pf,
-                            const char* name);
+    void serverInit(int width, int height, const PixelFormat& pf,
+                    const char* name) override;
 
-    virtual bool readAndDecodeRect(const Rect& r, int encoding,
-                                   ModifiablePixelBuffer* pb);
+    bool readAndDecodeRect(const Rect& r, int encoding,
+                           ModifiablePixelBuffer* pb) override;
 
-    virtual void framebufferUpdateStart();
-    virtual void framebufferUpdateEnd();
-    virtual bool dataRect(const Rect& r, int encoding);
+    void framebufferUpdateStart() override;
+    void framebufferUpdateEnd() override;
+    bool dataRect(const Rect& r, int encoding) override;
 
-    virtual void serverCutText(const char* str);
+    void serverCutText(const char* str) override;
 
-    virtual void handleClipboardCaps(rdr::U32 flags,
-                                     const rdr::U32* lengths);
-    virtual void handleClipboardRequest(rdr::U32 flags);
-    virtual void handleClipboardPeek(rdr::U32 flags);
-    virtual void handleClipboardNotify(rdr::U32 flags);
-    virtual void handleClipboardProvide(rdr::U32 flags,
-                                        const size_t* lengths,
-                                        const rdr::U8* const* data);
+    void handleClipboardCaps(uint32_t flags,
+                             const uint32_t* lengths) override;
+    void handleClipboardRequest(uint32_t flags) override;
+    void handleClipboardPeek() override;
+    void handleClipboardNotify(uint32_t flags) override;
+    void handleClipboardProvide(uint32_t flags, const size_t* lengths,
+                                const uint8_t* const* data) override;
 
 
     // Methods to be overridden in a derived class
+
+    // getUserPasswd() gets the username and password.  This might
+    // involve a dialog, getpass(), etc.  The user buffer pointer can be
+    // null, in which case no user name will be retrieved.
+    virtual void getUserPasswd(bool secure, std::string* user,
+                               std::string* password) = 0;
+
+    // showMsgBox() displays a message box with the specified style and
+    // contents.  The return value is true if the user clicked OK/Yes.
+    virtual bool showMsgBox(MsgBoxFlags flags, const char *title,
+                            const char *text) = 0;
 
     // authSuccess() is called when authentication has succeeded.
     virtual void authSuccess();
@@ -180,6 +197,18 @@ namespace rfb {
     // clipboard via handleClipboardRequest().
     virtual void sendClipboardData(const char* data);
 
+    // sendKeyPress()/sendKeyRelease() send keyboard events to the
+    // server
+    void sendKeyPress(int systemKeyCode, uint32_t keyCode, uint32_t keySym);
+    void sendKeyRelease(int systemKeyCode);
+
+    // releaseAllKeys() sends keyboard release events to the server for
+    // all keys that are currently pressed down by this client,
+    // avoiding keys getting stuck. This can be useful if the client
+    // loses keyboard focus or otherwise no longer gets keyboard events
+    // from the system.
+    void releaseAllKeys();
+
     // refreshFramebuffer() forces a complete refresh of the entire
     // framebuffer
     void refreshFramebuffer();
@@ -206,7 +235,7 @@ namespace rfb {
 
     // Access method used by SSecurity implementations that can verify servers'
     // Identities, to determine the unique(ish) name of the server.
-    const char* getServerName() const { return serverName.buf; }
+    const char* getServerName() const { return serverName.c_str(); }
 
     bool isSecure() const { return csecurity ? csecurity->isSecure() : false; }
 
@@ -248,7 +277,7 @@ namespace rfb {
     // responds to requests, stating no support for synchronisation.
     // When overriding, call CMsgHandler::fence() directly in order to
     // state correct support for fence flags.
-    virtual void fence(rdr::U32 flags, unsigned len, const char data[]);
+    void fence(uint32_t flags, unsigned len, const uint8_t data[]) override;
 
   private:
     bool processVersionMsg();
@@ -257,7 +286,7 @@ namespace rfb {
     bool processSecurityResultMsg();
     bool processSecurityReasonMsg();
     bool processInitMsg();
-    void throwAuthFailureException();
+    void throwAuthError();
     void securityCompleted();
 
     void requestNewUpdate();
@@ -271,7 +300,7 @@ namespace rfb {
     bool shared;
     stateEnum state_;
 
-    CharArray serverName;
+    std::string serverName;
 
     bool pendingPFChange;
     rfb::PixelFormat pendingPF;
@@ -293,9 +322,17 @@ namespace rfb {
     ModifiablePixelBuffer* framebuffer;
     DecodeManager decoder;
 
-    char* serverClipboard;
+    std::string serverClipboard;
+    bool hasRemoteClipboard;
     bool hasLocalClipboard;
     bool unsolicitedClipboardAttempt;
+
+    struct DownKey {
+        uint32_t keyCode;
+        uint32_t keySym;
+    };
+    typedef std::map<int, DownKey> DownMap;
+    DownMap downKeys;
   };
 }
 #endif

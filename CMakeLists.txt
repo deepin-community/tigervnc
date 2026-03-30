@@ -2,13 +2,7 @@
 # Setup
 #
 
-cmake_minimum_required(VERSION 2.8.11)
-if(POLICY CMP0022)
-  cmake_policy(SET CMP0022 OLD)
-endif()
-if(${CMAKE_VERSION} VERSION_LESS "3.4.0")
-  message(WARNING "CMake 3.4.0 or newer is required to get correct default installation paths")
-endif()
+cmake_minimum_required(VERSION 3.10.0)
 
 # Internal cmake modules
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
@@ -16,6 +10,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/Modules)
 include(CheckIncludeFiles)
 include(CheckFunctionExists)
 include(CheckLibraryExists)
+include(CheckVariableExists)
 include(CheckTypeSize)
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
@@ -23,11 +18,13 @@ include(CheckCSourceRuns)
 
 include(CMakeMacroLibtoolFile)
 
+include(cmake/TargetLinkDirectories.cmake)
+
 project(tigervnc)
-set(VERSION 1.12.0)
+set(VERSION 1.15.0)
 
 # The RC version must always be four comma-separated numbers
-set(RCVERSION 1,12,0,0)
+string(REPLACE . , RCVERSION "${VERSION}.0")
 
 # Installation paths
 include(GNUInstallDirs)
@@ -68,16 +65,25 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -UNDEBUG")
 set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -UNDEBUG")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -UNDEBUG")
 
-# Make sure we get a sane C version
+# But extra debug checks are still gated by this custom define
+IF(CMAKE_BUILD_TYPE MATCHES Debug)
+  add_definitions(-D_DEBUG)
+ENDIF()
+
+# Make sure we get a sane C and C++ version
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
 
 # Tell the compiler to be stringent
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wformat=2")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wformat=2")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wformat=2 -Wvla")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wformat=2 -Wvla")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wzero-as-null-pointer-constant")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsuggest-override")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow")
 # Make sure we catch these issues whilst developing
 IF(CMAKE_BUILD_TYPE MATCHES Debug)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror -Werror=vla")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Werror=vla")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 ENDIF()
 # clang doesn't support format_arg, which breaks this warning
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -111,37 +117,28 @@ if(APPLE)
   add_definitions(-D__ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES=0)
 endif()
 
-if(CMAKE_SIZEOF_VOID_P MATCHES 8)
-  message(STATUS "64-bit build")
-else()
-  message(STATUS "32-bit build")
-endif()
+#### Check for required and optional libraries ####
 
-# Versions of CMake before 2.8.7 do not properly support resource compilation
-# with MinGW.  Boo!
-if(MINGW AND "${CMAKE_VERSION}" VERSION_LESS "2.8.7")
-  if(NOT DEFINED RC)
-    set(CMAKE_RC_COMPILER_INIT windres)
-  else()
-    set(CMAKE_RC_COMPILER_INIT ${RC})
-  endif()
-  enable_language(RC)
-  message(STATUS "Resource compiler: ${CMAKE_RC_COMPILER}")
-  set(CMAKE_RC_COMPILE_OBJECT
-    "<CMAKE_RC_COMPILER> <FLAGS> <DEFINES> -o <OBJECT> --output-format=coff <SOURCE>")
-endif()
-
-# MinGW64 has header support but no library support for IActiveDesktop, so we
-# need to check for both the header and library and use our own implementation
-# in common/os if either doesn't exist.
-if(WIN32)
-  check_c_source_compiles("#include <windows.h>\n#include <wininet.h>\n#include <shlobj.h>\nint main(int c, char** v) {IActiveDesktop iad; (void)iad; return 0;}" HAVE_ACTIVE_DESKTOP_H)
-  check_c_source_compiles("#include <windows.h>\n#include <wininet.h>\n#include <shlobj.h>\nint main(int c, char** v) {GUID i = CLSID_ActiveDesktop; (void)i; return 0;}" HAVE_ACTIVE_DESKTOP_L)
-endif()
+macro(trioption VAR DESC)
+  set(${VAR} AUTO CACHE STRING "${DESC}")
+  set_property(CACHE ${VAR} PROPERTY STRINGS AUTO ON OFF)
+endmacro()
 
 # X11 stuff. It's in a if() so that we can say REQUIRED
 if(UNIX AND NOT APPLE)
   find_package(X11 REQUIRED)
+  if(X11_Xdamage_LIB)
+    add_definitions(-DHAVE_XDAMAGE)
+  endif()
+  if(X11_Xfixes_LIB)
+    add_definitions(-DHAVE_XFIXES)
+  endif()
+  if(X11_Xrandr_LIB)
+    add_definitions(-DHAVE_XRANDR)
+  endif()
+  if(X11_XTest_LIB)
+    add_definitions(-DHAVE_XTEST)
+  endif()
 endif()
 
 # Check for zlib
@@ -151,13 +148,17 @@ find_package(ZLIB REQUIRED)
 find_package(Pixman REQUIRED)
 
 # Check for gettext
-option(ENABLE_NLS "Enable translation of program messages" ON)
+trioption(ENABLE_NLS "Enable translation of program messages")
 if(ENABLE_NLS)
   # Tools
   find_package(Gettext)
 
   # Gettext needs iconv
-  find_package(Iconv)
+  if(ENABLE_NLS STREQUAL "AUTO")
+    find_package(Iconv)
+  else()
+    find_package(Iconv REQUIRED)
+  endif()
 
   if(ICONV_FOUND)
     # Headers and libraries (copied from licq)
@@ -183,12 +184,50 @@ if(ENABLE_NLS)
       set(CMAKE_REQUIRED_LIBRARIES)
       set(CMAKE_REQUIRED_FLAGS)
     endif()
+
+    if(NOT GETTEXT_FOUND AND NOT ENABLE_NLS STREQUAL "AUTO")
+      message(FATAL_ERROR "Could not find GETTEXT")
+    endif()
   endif()
 
   if(NOT GETTEXT_FOUND OR NOT ICONV_FOUND)
     message(WARNING "Gettext NOT found.  Native Language Support disabled.")
     set(ENABLE_NLS 0)
   endif()
+endif()
+
+trioption(ENABLE_H264 "Enable H.264 RFB encoding")
+if(ENABLE_H264)
+  if(WIN32)
+    add_definitions("-DHAVE_H264")
+    set(H264_LIBS "WIN")  # may be LIBAV in the future
+    set(H264_LIBRARIES ole32 mfplat mfuuid wmcodecdspuuid)
+
+    set(CMAKE_REQUIRED_LIBRARIES ${H264_LIBRARIES})
+    check_variable_exists(CLSID_VideoProcessorMFT HAVE_VIDEO_PROCESSOR_MFT)
+    set(CMAKE_REQUIRED_LIBRARIES)
+    if(HAVE_VIDEO_PROCESSOR_MFT)
+      add_definitions("-DHAVE_VIDEO_PROCESSOR_MFT")
+    endif()
+  else()
+    if(ENABLE_H264 STREQUAL "AUTO")
+      find_package(Ffmpeg)
+    else()
+      find_package(Ffmpeg REQUIRED)
+    endif()
+    if (AVCODEC_FOUND AND AVUTIL_FOUND AND SWSCALE_FOUND)
+      set(H264_INCLUDE_DIRS ${AVCODEC_INCLUDE_DIRS} ${AVUTIL_INCLUDE_DIRS} ${SWSCALE_INCLUDE_DIRS})
+      set(H264_LIBRARIES ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES})
+      set(H264_LIBRARY_DIRS ${AVCODEC_LIBRARY_DIRS} ${AVUTIL_LIBRARY_DIRS} ${SWSCALE_LIBRARY_DIRS})
+      add_definitions("-D__STDC_CONSTANT_MACROS")
+      add_definitions("-DHAVE_H264")
+      set(H264_LIBS "LIBAV")
+    else()
+      set(H264_LIBS "NONE")
+      message(WARNING "FFMPEG support can't be found")
+    endif()
+  endif()
+  add_definitions("-DH264_${H264_LIBS}")
 endif()
 
 # Check for libjpeg
@@ -224,10 +263,8 @@ set(CMAKE_REQUIRED_FLAGS)
 set(CMAKE_REQUIRED_DEFINITIONS)
 
 if(NOT FOUND_LIBJPEG_TURBO)
-  message(STATUS "WARNING: You are not using libjpeg-turbo. Performance will suffer.")
+  message(STATUS "Warning: You are not using libjpeg-turbo. Performance will suffer.")
 endif()
-
-include_directories(${JPEG_INCLUDE_DIR})
 
 option(BUILD_JAVA "Build Java version of the TigerVNC Viewer" FALSE)
 if(BUILD_JAVA)
@@ -241,6 +278,7 @@ if(BUILD_VIEWER)
   set(FLTK_SKIP_OPENGL TRUE)
   set(FLTK_SKIP_FORMS TRUE)
   find_package(FLTK REQUIRED)
+
   if(UNIX AND NOT APPLE)
     # No proper handling for extra X11 libs that FLTK might need...
     if(X11_Xft_FOUND)
@@ -262,16 +300,43 @@ if(BUILD_VIEWER)
       set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_Xrender_LIB})
     endif()
   endif()
+
+  set(CMAKE_REQUIRED_FLAGS "-Wno-error")
+  set(CMAKE_REQUIRED_INCLUDES ${FLTK_INCLUDE_DIR})
+  set(CMAKE_REQUIRED_LIBRARIES ${FLTK_LIBRARIES})
+
+  check_cxx_source_compiles("#include <FL/Fl.H>\n#if FL_MAJOR_VERSION != 1 || FL_MINOR_VERSION != 3\n#error Wrong FLTK version\n#endif\nint main(int, char**) { return 0; }" OK_FLTK_VERSION)
+  if(NOT OK_FLTK_VERSION)
+    message(FATAL_ERROR "Incompatible version of FLTK")
+  endif()
+
+  set(CMAKE_REQUIRED_FLAGS)
+  set(CMAKE_REQUIRED_INCLUDES)
+  set(CMAKE_REQUIRED_LIBRARIES)
 endif()
 
 # Check for GNUTLS library
-option(ENABLE_GNUTLS "Enable protocol encryption and advanced authentication" ON)
+trioption(ENABLE_GNUTLS "Enable protocol encryption and advanced authentication")
 if(ENABLE_GNUTLS)
-  find_package(GnuTLS)
+  if(ENABLE_GNUTLS STREQUAL "AUTO")
+    find_package(GnuTLS)
+  else()
+    find_package(GnuTLS REQUIRED)
+  endif()
   if (GNUTLS_FOUND)
-    include_directories(${GNUTLS_INCLUDE_DIR})
     add_definitions("-DHAVE_GNUTLS")
-    add_definitions(${GNUTLS_DEFINITIONS})
+  endif()
+endif()
+
+trioption(ENABLE_NETTLE "Enable RSA-AES security types")
+if (ENABLE_NETTLE)
+  if(ENABLE_NETTLE STREQUAL "AUTO")
+    find_package(Nettle)
+  else()
+    find_package(Nettle REQUIRED)
+  endif()
+  if (NETTLE_FOUND)
+    add_definitions("-DHAVE_NETTLE")
   endif()
 endif()
 
@@ -285,6 +350,44 @@ if(UNIX AND NOT APPLE)
     set(PAM_LIBS pam)
   else()
     message(FATAL_ERROR "Could not find PAM development files")
+  endif()
+endif()
+
+# Check for SELinux library
+if(UNIX AND NOT APPLE)
+  check_include_files(selinux/selinux.h HAVE_SELINUX_H)
+  if(HAVE_SELINUX_H)
+    set(CMAKE_REQUIRED_LIBRARIES -lselinux)
+    set(CMAKE_REQUIRED_LIBRARIES)
+    set(SELINUX_LIBS selinux)
+    add_definitions("-DHAVE_SELINUX")
+  else()
+    message(WARNING "Could not find SELinux development files")
+  endif()
+endif()
+
+# check for systemd support (socket activation)
+if(UNIX AND NOT APPLE)
+  find_package(PkgConfig)
+  if (PKG_CONFIG_FOUND)
+    pkg_check_modules(LIBSYSTEMD libsystemd)
+    if (LIBSYSTEMD_FOUND)
+      add_definitions(-DHAVE_LIBSYSTEMD)
+    endif()
+  endif()
+endif()
+
+# check for password pwquality check support
+if(UNIX AND NOT APPLE)
+  option(ENABLE_PWQUALITY "Enable password pwquality check" ON)
+  if(ENABLE_PWQUALITY)
+    find_package(PkgConfig)
+    if(PKG_CONFIG_FOUND)
+      pkg_check_modules(PWQUALITY pwquality)
+      if(PWQUALITY_FOUND)
+        add_definitions(-DHAVE_PWQUALITY)
+      endif()
+    endif()
   endif()
 endif()
 
@@ -327,3 +430,5 @@ configure_file("${CMAKE_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
   "cmake_uninstall.cmake" IMMEDIATE @ONLY)
 
 add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P cmake_uninstall.cmake)
+
+libtool_generate_control_files()

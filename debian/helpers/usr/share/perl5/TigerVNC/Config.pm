@@ -28,6 +28,8 @@ use warnings;
 
 use File::Spec;
 use File::Path qw(mkpath);
+use File::Copy qw(mv);
+use File::Basename qw(dirname basename);
 
 use TigerVNC::OptionTie;
 use TigerVNC::Common;
@@ -200,26 +202,7 @@ sub handleVNCStartupAuto {
   my ($vncStartup, $options) = @_;
 
   my $vncStartupAuto = $vncStartup;
-  if (-f File::Spec->catfile($options->{'vncUserDir'}, "Xtigervnc-session")) {
-    # A user provided Xtigervnc-session script exists => use it.
-    $vncStartupAuto =
-      File::Spec->catfile($options->{'vncUserDir'}, "Xtigervnc-session");
-  } elsif (-f File::Spec->catfile($options->{'vncUserDir'}, "Xvnc-session")) {
-    # This is deprecated rename it to Xtigervnc-session.
-    if (rename
-        File::Spec->catfile($options->{'vncUserDir'}, "Xvnc-session")
-      , File::Spec->catfile($options->{'vncUserDir'}, "Xtigervnc-session")) {
-      symlink "Xtigervnc-session"
-        , File::Spec->catfile($options->{'vncUserDir'}, "Xvnc-session");
-      # A user provided Xtigervnc-session script exists => use it.
-      $vncStartupAuto =
-        File::Spec->catfile($options->{'vncUserDir'}, "Xtigervnc-session");
-    } else {
-      # A user provided Xtigervnc-session script exists => use it.
-      $vncStartupAuto =
-        File::Spec->catfile($options->{'vncUserDir'}, "Xvnc-session");
-    }
-  } elsif (-f File::Spec->catfile($options->{'vncUserDir'}, "xstartup")) {
+  if (-f File::Spec->catfile($options->{'vncUserDir'}, "xstartup")) {
     # A user provided Xtigervnc-session script exists => use it.
     $vncStartupAuto =
       File::Spec->catfile($options->{'vncUserDir'}, "xstartup");
@@ -369,6 +352,8 @@ sub getOptionParseTable($$) {
        "if specified, debugging output is enabled." ],
       [36, 'dry-run'           => 'dry-run',
        "if enabled, no real action is taken only a simulation of what would be done is performed." ],
+      [36, 'pidfile=s'         => 'vncPidFile',
+       "file to store the pid of the running $server server." ],
       [36, 'I-KNOW-THIS-IS-INSECURE' => 'I-KNOW-THIS-IS-INSECURE' ],
       # Parameters for both Xtigervnc and X0tigervnc (case insensitive)
       [63, 'ZlibLevel=i'       => 'ZlibLevel' ],
@@ -449,11 +434,15 @@ sub getOptionParseTable($$) {
        "denotes a X509 certificate key file (PEM format). This is used by the security types X509None, X509Vnc, and X509Plain." ],
       [63, 'X509Cert=s'        => 'X509Cert',
        "denotes the corresponding X509 certificate (PEM format)." ],
+      [63, 'RSAKey=s'          => 'RSAKey',
+       "denotes an RSA key file in PEM format for the RSA-AES security types RA2, RA2ne, RA2_256, and RA2ne_256." ],
+      [63, 'RequireUsername:b' => 'RequireUsername',
+       "denotes if a username is required for the RSA-AES security types, default is off." ],
       [63, 'Password=s'        => 'Password' ],
       [63, 'PasswordFile|rfbauth=s' => 'vncPasswdFile',
        "specifies the password file for security types VncAuth, TLSVnc, and X509Vnc. On default, ~/.vnc/passwd is used." ],
       [63, 'SecurityTypes=s'   => 'SecurityTypes',
-       "specifies a comma list of security types to offer (None, VncAuth, Plain, TLSNone, TLSVnc, TLSPlain, X509None, X509Vnc, X509Plain). On default, offer only VncAuth." ],
+       "specifies a comma list of security types to offer (None, VncAuth, Plain, TLSNone, TLSVnc, TLSPlain, X509None, X509Vnc, X509Plain, RA2, RA2ne, RA2_256, and RA2ne_256). On default, offer only VncAuth." ],
       # Arguments from Xtigervnc (case sensitive)
       [14, 'auth=s'            => 'xauthorityFile' ],
       # -inetd is not handled
@@ -484,6 +473,7 @@ sub getOptionParseTable($$) {
         "specifies the screen area that will be shown to VNC clients. The format is widthxheight+xoffset+yoffset, where `+' signs can be replaced with `-' signs to specify offsets from the right and/or from the bottom of the screen. Offsets are optional, +0+0 is assumed by default (top left corner). If the argument is  empty, full screen is shown to VNC clients (this is the default)." ],
       # Config file only stuff
       [ 2, 'sslAutoGenCertCommand=s' => 'sslAutoGenCertCommand' ],
+      [ 2, 'sslAutoGenRSAKeyCommand=s' => 'sslAutoGenRSAKeyCommand' ],
       [ 2, 'vncUserDir=s'      => 'vncUserDir' ],
       [ 2, 'vncStartup=s'      => 'vncStartup' ],
       [ 2, 'xauthorityFile=s'  => 'xauthorityFile' ],
@@ -496,6 +486,7 @@ sub getOptionParseTable($$) {
       # Backward compatible configuration file option for fp
       [ 2, 'fontPath=s'        => 'fontPath' ],
       # Options only for tigervncserver
+      [14, 'query=s'           => 'query' ],
       [14, 'geometry=s'        => sub {
           if (@_ == 2) {
             my $geometry = $_[1] // "undef";
@@ -567,6 +558,7 @@ sub getOptionParseTable($$) {
       [ 4, 'noxstartup'        => sub {
           if (@_ == 2) {
             &{$override}('vncStartup', undef);
+            &{$override}('autokill', 0);
           } elsif (defined $options->{'src'}->{'vncStartup'}) {
             return !defined $options->{'vncStartup'};
           } else {
@@ -774,22 +766,9 @@ sub readConfigFile($$) {
     $configFile = File::Spec->catfile($SYSTEMCONFIGDIR,
       "vncserver-config-defaults");
   } elsif ($desc eq 'user') {
-    if (-f File::Spec->catfile($options->{'vncUserDir'}, "tigervnc.conf")) {
+    if (-f File::Spec->catfile($options->{'vncUserDir'}, "config.pl")) {
       # User provided TigerVNC configuration found
-      $configFile = File::Spec->catfile($options->{'vncUserDir'}, "tigervnc.conf");
-    } elsif (-f File::Spec->catfile($options->{'vncUserDir'}, "vnc.conf")) {
-      # This is deprecated rename it to tigervnc.conf
-      if (rename
-          File::Spec->catfile($options->{'vncUserDir'}, "vnc.conf")
-        , File::Spec->catfile($options->{'vncUserDir'}, "tigervnc.conf")) {
-        symlink "tigervnc.conf"
-          , File::Spec->catfile($options->{'vncUserDir'}, "vnc.conf");
-        # User provided TigerVNC configuration found
-        $configFile = File::Spec->catfile($options->{'vncUserDir'}, "tigervnc.conf");
-      } else {
-        # User provided TigerVNC configuration found
-        $configFile = File::Spec->catfile($options->{'vncUserDir'}, "vnc.conf");
-      }
+      $configFile = File::Spec->catfile($options->{'vncUserDir'}, "config.pl");
     } elsif (-f File::Spec->catfile($options->{'vncUserDir'}, "config")) {
       # User provided TigerVNC configuration found
       $configFile = File::Spec->catfile($options->{'vncUserDir'}, "config");
@@ -1383,9 +1362,15 @@ sub getConfig {
                # use our own /etc/pam.d/tigervnc as fallback.
       sslAutoGenCertCommand     =>
         "openssl req -newkey ec:$SYSTEMCONFIGDIR/openssl-ecparams.pem -x509 -days 2190 -nodes",
+      sslAutoGenRSAKeyCommand   =>
+        "openssl genrsa -out RSAKeyFile 4096",
 ## Values declared as user values in /etc/tigervnc/vncserver-config-*, i.e.,
 ## values that are intended to be overwritten by ~/.vnc/tigervnc.conf.
       vncUserDir                =>
+        defined($ENV{XDG_CONFIG_HOME}) && rindex($ENV{XDG_CONFIG_HOME}, "/", 0) == 0
+        ? File::Spec->catfile($ENV{XDG_CONFIG_HOME}, "tigervnc")
+        : File::Spec->catfile($ENV{HOME}, ".config", "tigervnc"),
+      vncLegacyDir              =>
         File::Spec->catfile($ENV{HOME}, ".vnc"),
       vncPasswdFile             =>
         undef, # later derived from vncUserDir
@@ -1413,6 +1398,10 @@ sub getConfig {
       X509Key                   =>
         undef, # auto generated if absent and stored in
                # ~/.vnc/${HOSTFQDN}-SrvKey.pem
+      RSAKey                    =>
+        undef, # auto generated if absent and stored in
+               # ~/.vnc/${HOSTFQDN}-SrvRsaKey.pem
+      RequireUsername           => undef,
       session                   => undef,
 # Undocumented values
       vncServerExtraArgs        => [],
@@ -1439,7 +1428,54 @@ sub getConfig {
       print STDERR "$PROG: Could not create $opts->{'vncUserDir'}, file exists but is not a directory.\n";
       exit 1;
     }
-    if (!mkpath ($opts->{'vncUserDir'}, 0, 0755)) {
+    # legacy ~/.vnc directory migration code
+    if (!(-l $opts->{'vncLegacyDir'}) && (-d $opts->{'vncLegacyDir'})) {
+      if (!mv($opts->{'vncLegacyDir'}, $opts->{'vncUserDir'})) {
+        print STDERR "$PROG: Could not migrate $opts->{'vncLegacyDir'} to $opts->{'vncUserDir'}.\n";
+        exit 1;
+      }
+      symlink File::Spec->abs2rel(
+            $opts->{'vncUserDir'}, dirname($opts->{'vncLegacyDir'}))
+        , $opts->{'vncLegacyDir'};
+      if (!-f File::Spec->catfile($opts->{'vncUserDir'}, "config.pl")) {
+        if (-f File::Spec->catfile($opts->{'vncUserDir'}, "tigervnc.conf")) {
+          # This is deprecated rename it to config.pl
+          if (rename
+              File::Spec->catfile($opts->{'vncUserDir'}, "tigervnc.conf")
+            , File::Spec->catfile($opts->{'vncUserDir'}, "config.pl")) {
+            symlink "config.pl"
+              , File::Spec->catfile($opts->{'vncUserDir'}, "tigervnc.conf");
+          }
+        } elsif (-f File::Spec->catfile($opts->{'vncUserDir'}, "vnc.conf")) {
+          # This is deprecated rename it to config.pl
+          if (rename
+              File::Spec->catfile($opts->{'vncUserDir'}, "vnc.conf")
+            , File::Spec->catfile($opts->{'vncUserDir'}, "config.pl")) {
+            symlink "config.pl"
+              , File::Spec->catfile($opts->{'vncUserDir'}, "vnc.conf");
+          }
+        }
+      }
+      if (!-f File::Spec->catfile($opts->{'vncUserDir'}, "xstartup")) {
+        if (-f File::Spec->catfile($opts->{'vncUserDir'}, "Xtigervnc-session")) {
+          # This is deprecated rename it to xstartup
+          if (rename
+              File::Spec->catfile($opts->{'vncUserDir'}, "Xtigervnc-session")
+            , File::Spec->catfile($opts->{'vncUserDir'}, "xstartup")) {
+            symlink "xstartup"
+              , File::Spec->catfile($opts->{'vncUserDir'}, "Xtigervnc-session");
+          }
+        } elsif (-f File::Spec->catfile($opts->{'vncUserDir'}, "Xvnc-session")) {
+          # This is deprecated rename it to xstartup
+          if (rename
+              File::Spec->catfile($opts->{'vncUserDir'}, "Xvnc-session")
+            , File::Spec->catfile($opts->{'vncUserDir'}, "xstartup")) {
+            symlink "xstartup"
+              , File::Spec->catfile($opts->{'vncUserDir'}, "Xvnc-session");
+          }
+        }
+      }
+    } elsif (!mkpath ($opts->{'vncUserDir'}, 0, 0755)) {
       print STDERR "$PROG: Could not create $opts->{'vncUserDir'}.\n";
       exit 1;
     }

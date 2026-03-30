@@ -39,11 +39,13 @@ ssize_t TLSInStream::pull(gnutls_transport_ptr_t str, void* data, size_t size)
   TLSInStream* self= (TLSInStream*) str;
   InStream *in = self->in;
 
+  self->streamEmpty = false;
   delete self->saved_exception;
-  self->saved_exception = NULL;
+  self->saved_exception = nullptr;
 
   try {
     if (!in->hasData(1)) {
+      self->streamEmpty = true;
       gnutls_transport_set_errno(self->session, EAGAIN);
       return -1;
     }
@@ -51,18 +53,18 @@ ssize_t TLSInStream::pull(gnutls_transport_ptr_t str, void* data, size_t size)
     if (in->avail() < size)
       size = in->avail();
   
-    in->readBytes(data, size);
-  } catch (EndOfStream&) {
+    in->readBytes((uint8_t*)data, size);
+  } catch (end_of_stream&) {
     return 0;
-  } catch (SystemException &e) {
-    vlog.error("Failure reading TLS data: %s", e.str());
+  } catch (socket_error& e) {
+    vlog.error("Failure reading TLS data: %s", e.what());
     gnutls_transport_set_errno(self->session, e.err);
-    self->saved_exception = new SystemException(e);
+    self->saved_exception = new socket_error(e);
     return -1;
-  } catch (Exception& e) {
-    vlog.error("Failure reading TLS data: %s", e.str());
+  } catch (std::exception& e) {
+    vlog.error("Failure reading TLS data: %s", e.what());
     gnutls_transport_set_errno(self->session, EINVAL);
-    self->saved_exception = new Exception(e);
+    self->saved_exception = new std::runtime_error(e.what());
     return -1;
   }
 
@@ -70,7 +72,7 @@ ssize_t TLSInStream::pull(gnutls_transport_ptr_t str, void* data, size_t size)
 }
 
 TLSInStream::TLSInStream(InStream* _in, gnutls_session_t _session)
-  : session(_session), in(_in), saved_exception(NULL)
+  : session(_session), in(_in), saved_exception(nullptr)
 {
   gnutls_transport_ptr_t recv, send;
 
@@ -81,14 +83,14 @@ TLSInStream::TLSInStream(InStream* _in, gnutls_session_t _session)
 
 TLSInStream::~TLSInStream()
 {
-  gnutls_transport_set_pull_function(session, NULL);
+  gnutls_transport_set_pull_function(session, nullptr);
 
   delete saved_exception;
 }
 
-bool TLSInStream::fillBuffer(size_t maxSize)
+bool TLSInStream::fillBuffer()
 {
-  size_t n = readTLS((U8*) end, maxSize);
+  size_t n = readTLS((uint8_t*) end, availSpace());
   if (n == 0)
     return false;
   end += n;
@@ -96,22 +98,37 @@ bool TLSInStream::fillBuffer(size_t maxSize)
   return true;
 }
 
-size_t TLSInStream::readTLS(U8* buf, size_t len)
+size_t TLSInStream::readTLS(uint8_t* buf, size_t len)
 {
   int n;
 
-  n = gnutls_record_recv(session, (void *) buf, len);
-  if (n == GNUTLS_E_INTERRUPTED || n == GNUTLS_E_AGAIN)
-    return 0;
+  while (true) {
+    streamEmpty = false;
+    n = gnutls_record_recv(session, (void *) buf, len);
+    if (n == GNUTLS_E_INTERRUPTED || n == GNUTLS_E_AGAIN) {
+      // GnuTLS returns GNUTLS_E_AGAIN for a bunch of other scenarios
+      // other than the pull function returning EAGAIN, so we have to
+      // double check that the underlying stream really is empty
+      if (!streamEmpty)
+        continue;
+      else
+        return 0;
+    }
+    break;
+  };
 
-  if (n == GNUTLS_E_PULL_ERROR)
-    throw *saved_exception;
+  if (n == GNUTLS_E_PULL_ERROR) {
+    if (dynamic_cast<socket_error*>(saved_exception))
+      throw *dynamic_cast<socket_error*>(saved_exception);
+    else
+      throw std::runtime_error(saved_exception->what());
+  }
 
   if (n < 0)
-    throw TLSException("readTLS", n);
+    throw tls_error("readTLS", n);
 
   if (n == 0)
-    throw EndOfStream();
+    throw end_of_stream();
 
   return n;
 }

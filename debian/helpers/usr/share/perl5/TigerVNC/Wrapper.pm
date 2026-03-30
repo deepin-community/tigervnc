@@ -18,7 +18,7 @@ TigerVNC::Wrapper - TigerVNC server management
   exit 1 unless &sanityCheck($options);
 
   # Next, parses the system /etc/tigervnc/vncserver-config-defaults and the user
-  # ~/.vnc/tigervnc.conf configuration file as well as processes the command line.
+  # ~/.config/tigervnc/config.pl configuration file as well as processes the command line.
   &getConfig($options);
 
   if ($options->{'kill'}) {
@@ -48,7 +48,7 @@ use File::Copy qw(cp);
 use File::Basename qw(dirname basename);
 use DirHandle;
 use IO::File;
-use Fcntl qw(SEEK_SET SEEK_CUR SEEK_END);
+use Fcntl qw(SEEK_SET SEEK_CUR SEEK_END S_ISREG);
 use Socket;
 use Time::HiRes qw(usleep);
 use Errno qw(:POSIX);
@@ -229,23 +229,17 @@ sub checkUnixSocketUp {
   return 1;
 }
 
-sub readPidFile($$) {
-  my ($options, $uniqueID) = @_;
-  my $pidFile     = &pidFile($options, $uniqueID);
-  my $pidFileFh   = IO::File->new($pidFile, "r");
-  unless (defined $pidFileFh) {
-    unless ($! == ENOENT) {
-      print STDERR "$PROG: Warning: Can't open pid file '$pidFile': $!\n";
-    }
-    return (undef, undef);
-  }
-  unless (($pidFileFh->getline()//"") =~ m/^([0-9]+)$/) {
-    print STDERR "$PROG: Warning: Can't parse pid file '$pidFile'!\n";
-    return (undef, undef);
-  }
-  my $pid   = int($1);
-  my $stale = !kill(0, $pid);
-  return ($pid, $stale);
+sub x509CertFiles {
+  my ($options) = @_;
+  return (
+    "$options->{'vncUserDir'}/${HOSTFQDN}-SrvCert.pem",
+    "$options->{'vncUserDir'}/${HOSTFQDN}-SrvKey.pem");
+}
+
+sub rsaKeyFile {
+  my ($options) = @_;
+  return
+    "$options->{'vncUserDir'}/${HOSTFQDN}-SrvRsaKey.pem";
 }
 
 sub getUniqueID($) {
@@ -282,25 +276,79 @@ sub getUniqueID($) {
   }
 }
 
-sub pidFile {
+sub pidFileStd {
   my ($options, $uniqueID) = @_;
   $uniqueID = &getUniqueID($options) unless defined $uniqueID;
   return File::Spec->catfile($options->{'vncUserDir'},
     "${HOSTFQDN}:${uniqueID}.pid");
 }
 
-sub x509CertFiles {
-  my ($options) = @_;
-  return (
-    "$options->{'vncUserDir'}/${HOSTFQDN}-SrvCert.pem",
-    "$options->{'vncUserDir'}/${HOSTFQDN}-SrvKey.pem");
+sub desktopLog {
+  my ($logFile) = @_;
+  $logFile =~ s{\.pid$}{};
+  return $logFile . ".log";
 }
 
-sub desktopLog {
+sub readPidFile($$) {
   my ($options, $uniqueID) = @_;
-  $uniqueID = &getUniqueID($options) unless defined $uniqueID;
-  return File::Spec->catfile($options->{'vncUserDir'},
-    "${HOSTFQDN}:${uniqueID}.log");
+  my $pidFileStd = &pidFileStd($options, $uniqueID);
+  my $pidFile = readlink $pidFileStd;
+  if (defined $pidFile) {
+    $pidFile = File::Spec->rel2abs($pidFile, dirname($pidFileStd));
+  } else {
+    $pidFile = $pidFileStd;
+  }
+  my $pidFileFh = IO::File->new($pidFile, "r");
+  unless (defined $pidFileFh) {
+    unless ($! == ENOENT) {
+      print STDERR "$PROG: Warning: Can't open pid file '$pidFile': $!\n";
+    }
+    return (undef, undef, undef);
+  }
+  unless (($pidFileFh->getline()//"") =~ m/^([0-9]+)$/) {
+    print STDERR "$PROG: Warning: Can't parse pid file '$pidFile'!\n";
+    return (undef, undef, undef);
+  }
+  my $pid   = int($1);
+  my $stale = !kill(0, $pid);
+  return ($pid, $stale, $pidFile);
+}
+
+sub CreatePidLogFiles($) {
+  my ($options) = @_;
+
+  my $pidFileStd = &pidFileStd($options);
+  my $pidFile = $options->{'vncPidFile'} // $pidFileStd;
+  $pidFile = File::Spec->rel2abs($pidFile, $options->{'vncUserDir'});
+  my $logFile = &desktopLog($pidFile);
+
+  my $pidFileFh  = IO::File->new($pidFile, "w", 0644);
+  unless (defined $pidFileFh) {
+    print STDERR "$PROG: Can't create pid file '$pidFile': $!\n";
+    unlink($pidFile);
+    return (undef, undef);
+  }
+  unlink($pidFile) if $options->{'dry-run'};
+
+  if ($pidFileStd ne $pidFile) {
+    my $pidFileRel = File::Spec->abs2rel($pidFile, dirname($pidFileStd));
+    unless(symlink $pidFileRel, $pidFileStd) {
+      print STDERR "$PROG: Can't symlink '$pidFileStd' to '$pidFileRel': $!\n";
+      unlink($pidFile);
+      unlink($pidFileStd);
+      return (undef, undef);
+    }
+  }
+
+  my $logFileFh = IO::File->new($logFile, "a+");
+  unless (defined $logFileFh && seek($logFileFh, 0, SEEK_END)) {
+    print STDERR "$PROG: Can't open log file '$logFile' for append: $!\n";
+    unlink($pidFile);
+    unlink($pidFileStd);
+    return (undef, undef);
+  }
+
+  return ($pidFileFh, $logFileFh, $logFile)
 }
 
 sub cleanStale($$$) {
@@ -308,11 +356,20 @@ sub cleanStale($$$) {
   my $usedDisplay = $runningVncServers->{$nr}->{'usedDisplay'};
   my $stale       = $runningVncServers->{$nr}->{'stale'};
   my $server      = $runningVncServers->{$nr}->{'server'};
-  my $pidFile     = &pidFile($options,$nr);
+  my $pidFileStd  = &pidFileStd($options,$nr);
 
   # vnc pidfile stale
   my $msg = "";
-  if (-e $pidFile) {
+  if (-e $pidFileStd) {
+    my $pidFile = readlink $pidFileStd;
+    if (defined $pidFile) {
+      $pidFile = File::Spec->rel2abs($pidFile, dirname($pidFileStd));
+      unless ($options->{'dry-run'} || unlink($pidFileStd) || $! == ENOENT) {
+	print STDERR "$PROG: Warning: Can't clean stale pidfile '$pidFileStd': $!\n";
+      }
+    } else {
+      $pidFile = $pidFileStd;
+    }
     unless ($options->{'dry-run'} || unlink($pidFile) || $! == ENOENT) {
       print STDERR "$PROG: Warning: Can't clean stale pidfile '$pidFile': $!\n";
     } elsif ($stale) {
@@ -342,7 +399,8 @@ sub runningVncServers {
     while (defined(my $entry = $d->read)) {
       next unless $entry =~ m/^\Q$HOSTFQDN\E:((\d+)(?:-.*)?)\.pid$/;
       my ($uniqueID, $nr) = ($1, $2);
-      my ($pid, $stale) = &readPidFile($options, $uniqueID);
+      my $pidFileStd = &pidFileStd($options, $uniqueID);
+      my ($pid, $stale, $pidFile) = &readPidFile($options, $uniqueID);
       next unless defined $pid;
       my ($usedDisplay, $rfbport, $rfbunixpath) = (undef, -1, undef);
       if ($nr ne $uniqueID) {
@@ -363,9 +421,9 @@ sub runningVncServers {
           ? ":${usedDisplay}"
           : "$HOSTFQDN:${usedDisplay}";
       }
+      my $logFile = &desktopLog($pidFile);
       {
-        my $logFile     = desktopLog($options, $uniqueID);
-        my $logFileFh   = File::ReadBackwards->new($logFile);
+        my $logFileFh = File::ReadBackwards->new($logFile);
         if (defined $logFileFh) {
           my $line;
           while (defined ($line = $logFileFh->readline)) {
@@ -380,7 +438,7 @@ sub runningVncServers {
              $usedDisplay = $1 if $DISPLAY =~ m/:(\d+)(?:\.\d+)?$/;
              last;
             } elsif ($line =~ m/^\Q$MAGIC\EUse (.*) to connect to the VNC server\.$/) {
-              # 3NI3X0 Use xtigervncviewer -SecurityTypes X509Plain -X509CA /home/joachim/.vnc/xerstin.jfalk.de-SrvCert.pem xerstin.jfalk.de:21 to connect to the VNC server.
+              # 3NI3X0 Use xtigervncviewer -SecurityTypes X509Plain -X509CA /home/joachim/.config/tigervnc/xerstin.jfalk.de-SrvCert.pem xerstin.jfalk.de:21 to connect to the VNC server.
               $client = $1;
             }
           }
@@ -400,6 +458,9 @@ sub runningVncServers {
           'server'      => $server,
           'client'      => $client,
           'pid'         => $pid,
+          'pidFileStd'  => $pidFileStd,
+          'pidFile'     => $pidFile,
+          'logFile'     => $logFile,
           'DISPLAY'     => $DISPLAY,
           'usedDisplay' => $usedDisplay,
           'rfbport'     => $rfbport,
@@ -568,6 +629,7 @@ sub killVncServers {
   foreach my $vnc (@{$vncs}) {
     my $stale       = \$runningVncServers->{$vnc}->{'stale'};
     my $pid         = $runningVncServers->{$vnc}->{'pid'};
+    my $logFile     = $runningVncServers->{$vnc}->{'logFile'};
     my $server      = $runningVncServers->{$vnc}->{'server'};
     my $usedDisplay = $runningVncServers->{$vnc}->{'usedDisplay'};
 
@@ -603,10 +665,9 @@ sub killVncServers {
 
     # If option -clean is given, also remove the logfile
     if (!$options->{'dry-run'} && $options->{'clean'}) {
-      my $desktopLog = &desktopLog($options, $vnc);
-      unless (unlink($desktopLog) || $! == ENOENT) {
+      unless (unlink($logFile) || $! == ENOENT) {
         $retval = 1;
-        print STDERR "Can't remove '$desktopLog': $!\n";
+        print STDERR "Can't remove '$logFile': $!\n";
       }
     }
   }
@@ -648,7 +709,7 @@ sub CreateVNCPasswd {
   my $vncPasswdFile = $options->{'vncPasswdFile'};
   my $st = stat($vncPasswdFile);
 
-  if (!defined($st) || ($st->mode & 077)) {
+  if (!defined($st) || !S_ISREG($st->mode)) {
     print "\nYou will require a password to access your desktops.\n\n";
     unless (unlink($vncPasswdFile) || $! == ENOENT) {
       print STDERR "Can't remove old vnc passwd file '$vncPasswdFile': $!!\n";
@@ -656,6 +717,9 @@ sub CreateVNCPasswd {
     }
     system(getCommand("tigervncpasswd"), $vncPasswdFile);
     exit 1 if (($? >> 8) != 0);
+  } elsif (defined($st) && ($st->mode & 077)) {
+    print STDERR "$vncPasswdFile must NOT be accessible by others. Set permission to 0600!\n";
+    exit 1;
   }
 }
 
@@ -715,6 +779,78 @@ sub CreateX509Cert {
   }
 }
 
+# Make sure the user has a RSA key if required.
+sub CreateRSAKey {
+  my ( $options ) = @_;
+
+  # Check whether RSA-AES authentication is enabled, and if so, create
+  # an RSA key if not already specified on the command line.
+  return if !$options->{'rsaKeyRequired'} ||
+            defined $options->{'RSAKey'};
+  $options->{'RSAKey'} = &rsaKeyFile($options);
+
+  my $st = stat($options->{'RSAKey'});
+  if (!defined($st) || ($st->mode & 077)) {
+    print "\nYou will require an RSA key to use RA2, RA2ne, RA2_256, or RA2ne_256.\n";
+    print "I will generate one for you in $options->{'RSAKey'}.\n\n";
+    unless (unlink($options->{'RSAKey'}) || $! == ENOENT) {
+      print STDERR "Can't remove old RSAKey file '$options->{'RSAKey'}': $!!\n";
+      exit 1;
+    }
+    my $toSSLFh;
+    my @CMD = split(/\s+/, $options->{'sslAutoGenRSAKeyCommand'});
+    @CMD = map { $_ eq 'RSAKeyFile' ? $options->{'RSAKey'} : $_ } @CMD;
+    $CMD[0] = &getCommand($CMD[0]);
+    $! = 0;
+    if (system(@CMD)) {
+      if ($!) {
+        print STDERR "Can't start openssl command ", join(' ', @CMD), ": $!!\n";
+      } else {
+        print STDERR "The openssl command ", join(' ', @CMD), " failed: $?\n";
+      }
+      unlink $options->{'RSAKey'};
+      exit 1;
+    }
+  }
+}
+
+sub CreateTmpVncDir {
+  my ( $options ) = @_;
+  my $tmpVncDir = File::Temp->newdir("tigervnc.XXXXXX",
+    DIR => File::Spec->tmpdir(), CLEANUP => 1);
+
+  # The following copies of the certificate and its key are required to
+  # support NFS mounted /home directories protected by Kerberos security. In
+  # this case, the Kerberos ticket might expire, making the certificate and
+  # its key in the /home directory unaccessible to the TigerVNC server.
+  # However, if there is a new incoming VNC connection, the VNC server needs
+  # to read these files if X509 security is enabled. If the Kerberos ticket
+  # is expired, these files will be unaccessible, and the VNC connection will
+  # fail to connect. To prevent this, we copy these files to a temporary
+  # directory where they will stay accessible.
+  foreach my $fileOption (qw(X509Cert X509Key RSAKey)) {
+    if (defined $options->{$fileOption}) {
+      my $oldName = $options->{$fileOption};
+      my $newName = File::Spec->catfile($tmpVncDir, basename($oldName));
+      cp($oldName, $newName) or
+        die "Can't copy $oldName to $tmpVncDir: $!";
+      $options->{$fileOption} = $newName;
+    }
+  }
+  return $tmpVncDir;
+}
+
+sub TouchTmpVncDir {
+  my ( $options ) = @_;
+
+  my $now = time();
+  # Touch files in $tmpVncDir to keep same active in case of /tmp cleaner.
+  foreach my $fileOption (qw(X509Cert X509Key RSAKey)) {
+    my $tmpName = $options->{$fileOption};
+    utime($now,$now,$tmpName) if defined $tmpName;
+  }
+}
+
 =pod
 
 =item startVncServer
@@ -767,14 +903,23 @@ sub startVncServer {
   $options->{'vncAuthEnabled'} = 0;
   $options->{'noneAuthEnabled'} = 0;
   $options->{'plainAuthEnabled'} = 0;
+  $options->{'rsaKeyRequired'} = 0;
   $options->{'x509CertRequired'} = 0;
   $options->{'haveSSLEncryption'} = 0;
   foreach my $securityType (split(',', $options->{'SecurityTypes'})) {
     $options->{'vncAuthEnabled'} = 1    if $securityType =~ m/^(?:.*vnc|vncauth)$/i;
     $options->{'noneAuthEnabled'} = 1   if $securityType =~ m/none$/i;
     $options->{'plainAuthEnabled'} = 1  if $securityType =~ m/plain$/i;
+    $options->{'rsaKeyRequired'} = 1    if $securityType =~ m/^ra2/i;
     $options->{'x509CertRequired'} = 1  if $securityType =~ m/^x509/i;
     $options->{'haveSSLEncryption'} = 1 if $securityType =~ m/^(?:x509|tls)/i;
+  }
+  if ($options->{'rsaKeyRequired'}) {
+    if ($options->{'RequireUsername'}) {
+      $options->{'plainAuthEnabled'} = 1;
+    } else {
+      $options->{'vncAuthEnabled'} = 1;
+    }
   }
 
   if ($options->{'plainAuthEnabled'} &&
@@ -790,8 +935,17 @@ sub startVncServer {
     # we have at least one *None security type in there, then
     # we better only server VNC on localhost to be tunneled via
     # ssh.
-    $options->{'localhost'} =
-        (!$options->{'haveSSLEncryption'} || $options->{'noneAuthEnabled'}) ? 1 : 0;
+    if ($options->{'noneAuthEnabled'}) {
+      $options->{'localhost'} = 1;
+    } elsif ($options->{'haveSSLEncryption'}) {
+      $options->{'localhost'} = 0;
+    } elsif ($options->{'rsaKeyRequired'}) {
+      # RSA-AES encryption is enabled
+      $options->{'localhost'} = 0;
+    } else {
+      # no encrypted VNC connection security types
+      $options->{'localhost'} = 1;
+    }
   }
   # PREVENT THE USER FROM EXPOSING A VNC SESSION WITHOUT AUTHENTICATION
   # TO THE WHOLE INTERNET!!!
@@ -814,6 +968,10 @@ sub startVncServer {
   unless ($options->{'plainAuthEnabled'}) {
     delete $options->{'PAMService'};
     delete $options->{'PlainUsers'};
+  }
+  unless ($options->{'rsaKeyRequired'}) {
+    delete $options->{'RSAKey'};
+    delete $options->{'RequireUsername'};
   }
   unless ($options->{'x509CertRequired'}) {
     delete $options->{'X509Cert'};
@@ -912,30 +1070,20 @@ sub startVncServer {
     }
   }
 
-  my $vncStartup = $options->{'vncStartup'};
-  my $desktopLog = &desktopLog($options);
-  my $pidFile    = &pidFile($options);
-
   # Make sure the user has a password if required.
   &CreateVNCPasswd($options);
   # Make sure the user has a x509 certificate if required.
   &CreateX509Cert($options);
+  # Make sure the user has a RSA key if required.
+  &CreateRSAKey($options);
   &CreateMITCookie($options) if $options->{'wrapperMode'} eq 'tigervncserver';
 
-  my $pidFileFh  = IO::File->new($pidFile, "w", 0644);
-  unless (defined $pidFileFh) {
-    print STDERR "$PROG: Can't create pid file '$pidFile': $!\n";
-    unlink($pidFile);
-    return 1;
-  }
-  unlink($pidFile) if $options->{'dry-run'};
+  my $vncStartup = $options->{'vncStartup'};
 
-  my $desktopLogFh = IO::File->new($desktopLog, "a+");
-  unless (defined $desktopLogFh && seek($desktopLogFh, 0, SEEK_END)) {
-    print STDERR "$PROG: Can't open log file '$desktopLog' for append: $!\n";
-    unlink($pidFile);
-    return 1;
-  }
+
+  my ($pidFileFh, $desktopLogFh, $desktopLog) = &CreatePidLogFiles($options);
+  # Return on error
+  return 1 unless defined $pidFileFh;
 
   my $terminate = 0;
   $SIG{TERM} = sub { $terminate = 1; };
@@ -970,39 +1118,7 @@ sub startVncServer {
     # Error flag for reporting to parent.
     my $error = 0;
 
-    my $tmpVncDir = File::Temp->newdir("tigervnc.XXXXXX",
-      DIR => File::Spec->tmpdir(), CLEANUP => 1);
-
-    # The following copies of the certificate and its key are required to
-    # support NFS mounted /home directories protected by Kerberos security. In
-    # this case, the Kerberos ticket might expire, making the certificate and
-    # its key in the /home directory unaccessible to the TigerVNC server.
-    # However, if there is a new incoming VNC connection, the VNC server needs
-    # to read these files if X509 security is enabled. If the Kerberos ticket
-    # is expired, these files will be unaccessible, and the VNC connection will
-    # fail to connect. To prevent this, we copy these files to a temporary
-    # directory where they will stay accessible.
-    if (defined $options->{'X509Cert'}) {
-      my $newName = File::Spec->catfile($tmpVncDir,
-        basename($options->{'X509Cert'}));
-      cp($options->{'X509Cert'}, $newName) or
-        die "Can't copy $options->{'X509Cert'} to $tmpVncDir: $!";
-      $options->{'X509Cert'} = $newName;
-    }
-    if (defined $options->{'X509Key'}) {
-      my $newName = File::Spec->catfile($tmpVncDir,
-        basename($options->{'X509Key'}));
-      cp($options->{'X509Key'}, $newName) or
-        die "Can't copy $options->{'X509Key'} to $tmpVncDir: $!";
-      $options->{'X509Key'} = $newName;
-    }
-    if (defined $options->{'vncPasswdFile'}) {
-      my $newName = File::Spec->catfile($tmpVncDir,
-        basename($options->{'vncPasswdFile'}));
-      cp($options->{'vncPasswdFile'}, $newName) or
-        die "Can't copy $options->{'vncPasswdFile'} to $tmpVncDir: $!";
-      $options->{'vncPasswdFile'} = $newName;
-    }
+    my $tmpVncDir = CreateTmpVncDir($options);
 
     # Starting up the Xtigervnc or X0tigervnc server.
     {
@@ -1310,6 +1426,8 @@ sub startVncServer {
       }
     }
     if (defined $xvncServerPid) {
+      chdir($tmpVncDir) or
+        print STDERR "$PROG: Can't change directory to $tmpVncDir: $!\n";
       unless ($terminate || $error || $options->{'fg'}) {
         # Detach ourselves from the terminal
         setsid() or die "Cannot detach from controlling terminal: $!";
@@ -1334,6 +1452,7 @@ sub startVncServer {
         # Check that the applications are still running if they were started.
         (!defined($vncSessionPid) || !defined($childStatus{$vncSessionPid})))
       {
+        TouchTmpVncDir($options);
         # Wait for SIGCHLD
         sleep 3600;
       }
@@ -1351,6 +1470,7 @@ sub startVncServer {
           # Check that the VNC server is still running.
           !defined($childStatus{$xvncServerPid}))
         {
+          TouchTmpVncDir($options);
           # Wait for SIGCHLD
           sleep 3600;
         }
@@ -1365,6 +1485,7 @@ sub startVncServer {
         &killVncServers($options, [$options->{'uniqueID'}], $runningVncServers);
       }
     }
+    chdir(File::Spec->rootdir());
     undef $tmpVncDir;
     syswrite STATUS_WH, ($error ? "ERR" : "OK!");
     exit 0 unless $options->{'fg'};

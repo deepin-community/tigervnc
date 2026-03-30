@@ -16,6 +16,10 @@
  * USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
 #ifdef HAVE_XRANDR
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
@@ -501,11 +505,13 @@ int vncRandRReconfigureOutput(int outputIdx, int x, int y,
 
 int vncRandRCanCreateOutputs(int extraOutputs)
 {
+  (void)extraOutputs;
   return 0;
 }
 
 int vncRandRCreateOutputs(int extraOutputs)
 {
+  (void)extraOutputs;
   return 0;
 }
 
