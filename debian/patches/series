@@ -39,3 +39,4 @@ rh/0904-Added-RH-patch-tigervnc11-rh588342.patch-which-fixes.patch
 
 # The following patches are security fixes
 CVE-2014-8240-849479.patch
+0010-Prevent-other-users-reading-x0vncserver-screen.patch

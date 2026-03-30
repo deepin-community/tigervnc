@@ -1,3 +1,10 @@
+tigervnc (1.15.0+dfsg-2deepin1) unstable; urgency=medium
+
+  * 0010-Prevent-other-users-reading-x0vncserver-screen.patch:
+    Fixes: CVE-2026-34352
+
+ -- Tianyu Chen <sweetyfish@deepin.org>  Mon, 30 Mar 2026 17:24:55 +0800
+
 tigervnc (1.15.0+dfsg-2) unstable; urgency=medium
 
   [ Stephan Springl ]
